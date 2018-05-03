@@ -12,6 +12,10 @@ Features:
 * I2C port (3V3)
 * On board MSP430G2553 handling keys and LEDs, internal I2C interface to Tiva C
 
+Supporting code is work in progress, will be released later.
+
+![Testbench setup](media/IMG_8469.jpg)
+
 #### LauncPad pin assignments:
 
 ``` plain
