@@ -3,7 +3,7 @@
  *
  * part MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * v0.0.1 (alpha) / 2018-05-08
  */
 
 /*
@@ -53,6 +53,7 @@ typedef enum {
 void keypad_setup (void);
 void keypad_flush (void);
 char keypad_get_keycode (void);
+bool keypad_has_keycode (void);
 void setKeyclickCallback (void (*fn)(bool keydown));
 void I2CSend (uint32_t i2cAddr, const uint8_t value);
 

@@ -3,7 +3,7 @@
  *
  * part MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * v0.0.1 (alpha) / 2018-05-08
  */
 
 /*
@@ -131,6 +131,11 @@ void keypad_flush (void)
     keybuf_tail = keybuf_head;
 }
 
+bool keypad_has_keycode (void)
+{
+    return keybuf_tail != keybuf_head;
+}
+
 // Returns 0 if no keycode enqueued
 char keypad_get_keycode (void)
 {
@@ -214,7 +219,6 @@ void I2C_interrupt_handler (void)
 
         case I2CState_ReceiveNext:
         {
-
             *i2c.data++ = I2CMasterDataGet(I2C1_BASE);
             I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_RECEIVE_CONT);
 
@@ -239,7 +243,7 @@ void I2C_interrupt_handler (void)
             i2c.count = 0;
             i2c.state = I2CState_Idle;
 
-            if(i2c.getKeycode) {
+            if(i2c.getKeycode && *i2c.data != 0) {
                 //  if(GPIOIntStatus(KEYINTR_PORT, KEYINTR_PIN) != 0) { // only add keycode when key is still pressed
                 enqueue_keycode(*i2c.data);
                 if(keyclickCallback)

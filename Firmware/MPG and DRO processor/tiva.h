@@ -3,7 +3,7 @@
  *
  * part MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * v0.0.1 (alpha) / 2018-05-08
  */
 
 /*
@@ -81,6 +81,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MPG_MODE_PERIPH    SYSCTL_PERIPH_GPIOB
 #define MPG_MODE_PORT      GPIO_PORTB_BASE
 #define MPG_MODE_PIN       GPIO_PIN_3
+
+#define MPG_GPIO0_PORT     GPIO_PORTB_BASE
+#define MPG_GPIO0_PIN      GPIO_PIN_2
 
 #define SIGNALS_PORT            GPIO_PORTE_BASE
 #define SIGNAL_CYCLESTART_PIN   GPIO_PIN_0
