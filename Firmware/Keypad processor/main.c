@@ -94,31 +94,31 @@ unsigned int laserpower = 10;
 #define NUMKEYS 30
 
 const key_t keyMap[NUMKEYS] = {
-    {'!',  Keytype_SingleEvent, 0x0101}, // Feed hold
-    {'.',  Keytype_SingleEvent, 0x0201},
+    {'\r', Keytype_SingleEvent, 0x0101}, // MPG mode toggle
+    {'C',  Keytype_SingleEvent, 0x0201}, // Flood coolant toogle
     {'R',  Keytype_Persistent,  0x0401}, // Right (X+)
     {'.',  Keytype_SingleEvent, 0x0801},
     {'.',  Keytype_SingleEvent, 0x1001},
 
     {'~',  Keytype_SingleEvent, 0x0102}, // Cycle Start
-    {'.',  Keytype_SingleEvent, 0x0202},
+    {'S',  Keytype_SingleEvent, 0x0202}, // Spindle on/off toogle
     {'.',  Keytype_SingleEvent, 0x0402},
     {'U',  Keytype_Persistent,  0x0802}, // Up (Z+)
     {'.',  Keytype_SingleEvent, 0x1002},
 
-    {'o',  Keytype_SingleEvent, 0x0104}, // Z factor
+    {'E',  Keytype_LongPress,   0x0104}, // Z lock
     {'m',  Keytype_SingleEvent, 0x0204}, // X factor
     {'.',  Keytype_SingleEvent, 0x0404},
     {'.',  Keytype_SingleEvent, 0x0804},
     {'L',  Keytype_Persistent,  0x1004}, // Left (X-)
 
-    {'D',  Keytype_Persistent,  0x0108},
-    {'\r', Keytype_SingleEvent, 0x0208}, // MPG mode toggle
+    {'!',  Keytype_SingleEvent, 0x0108}, // Feed hold
+    {'M',  Keytype_SingleEvent, 0x0208}, // Mist coolant toogle
     {'F',  Keytype_Persistent,  0x0408},
     {'.',  Keytype_SingleEvent, 0x0808},
     {'H',  Keytype_LongPress,   0x1008}, // Jog toggle / Home
 
-    {'E',  Keytype_LongPress,   0x0110}, // Z lock
+    {'o',  Keytype_SingleEvent, 0x0110}, // Z factor
     {'A',  Keytype_LongPress,   0x0210}, // X lock
     {'.',  Keytype_SingleEvent, 0x0410},
     {'.',  Keytype_SingleEvent, 0x0810},
@@ -259,8 +259,10 @@ void main (void)
             P2IE &= ~BUTINPUT;                      // Disable interrupts
         }
 
+        sleep(10000);                               // Wait a bit for things to settle
+
 		if(keyclick && (keypress = KeyScan())) {    // Key still pressed?
-			sleep(10000); 				            // Wait a bit (40 ms)
+				            // Wait a bit (40 ms)
 			keypress = Debounce(keypress->key);     // and debounce
 		}
 
@@ -365,7 +367,7 @@ const key_t *KeyScan (void)
 
 	if(!(P2IN & BUTINPUT))					// Keys still pressed?
 		return 0;						    // no, exit
-
+keycode = P2IN & BUTINPUT;
 	while(index & BUTDRIVE) {				// Loop through all rows
 
 		P1OUT &= ~BUTDRIVE;					// Stop driving rows
@@ -395,7 +397,7 @@ const key_t *KeyScan (void)
 	if(scancode != 0)                      				        // If key(s) were pressed
 		while(index && keyMap[--index].scanCode != scancode);	// then try to resolve to legal entry in lookup table
 
-	return keyMap[index].scanCode == scancode ? &keyMap[index] : 0;
+	return scancode != 0 && keyMap[index].scanCode == scancode ? &keyMap[index] : 0;
 }
 
 // P2.x Interrupt service routine

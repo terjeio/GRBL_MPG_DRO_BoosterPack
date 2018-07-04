@@ -1,9 +1,9 @@
 /*
  * keypad.c - I2C keypad interface for Texas Instruments Tiva C (TM4C123) processor
  *
- * part MPG/DRO for grbl on a secondary processor
+ * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-08
+ * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
  */
 
 /*
@@ -45,6 +45,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "tiva.h"
 #include "keypad.h"
+#include "navigator.h"
+#include "mpg.h"
 
 typedef enum {
     I2CState_Idle = 0,
@@ -65,12 +67,16 @@ typedef struct {
 } i2c_trans_t;
 
 static i2c_trans_t i2c;
+static leds_t leds_state = {
+    .value = 255
+};
 
 #define KEYBUF_SIZE 16
 #define i2cIsBusy (i2cBusy || I2CMasterBusy(I2C1_BASE))
 //#define i2cIsBusy ((i2c.state != I2CState_Idle) || I2CMasterBusy(I2C1_BASE))
 
 static volatile bool i2cBusy = false;
+static bool xlate = false;
 static char keybuf_buf[16];
 static volatile uint32_t keybuf_head = 0, keybuf_tail = 0;
 
@@ -78,12 +84,115 @@ static void I2C_interrupt_handler (void);
 static void keyclick_int_handler (void);
 
 static void (*keyclickCallback)(bool keydown) = 0;
+static void (*keyclickCallback2)(bool keydown, char key) = 0;
 
 void I2C_interrupt_handler (void);
+
+static void enqueue_keycode (char cmd)
+{
+    uint32_t bptr = (keybuf_head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
+
+    if(bptr != keybuf_tail) {                       // If not buffer full
+        keybuf_buf[keybuf_head] = cmd;              // add data to buffer
+        keybuf_head = bptr;                         // and update pointer
+    }
+}
 
 void setKeyclickCallback (void (*fn)(bool keydown))
 {
     keyclickCallback = fn;
+    setMPGCallback(0);
+}
+
+// Translate CNC assigned keycodes for UI use
+static void fixkey (bool keydown)
+{
+    static char c = 0;
+/*
+    static bool keywasdown = false;
+
+    if(keydown) {
+
+        if(keywasdown && != c)
+            keyclickCallback2(false, c);
+
+        c = keypad_get_keycode();
+    }
+
+    keywasdown = keydown;
+*/
+
+    if(keydown)
+        c = keypad_get_keycode();
+
+    if(xlate) switch(c) {
+
+        case 'e':
+            c = '.';
+            break;
+
+        case 'h':
+            c = 0x7F; // DEL
+            break;
+
+        case 'R':
+            c = 0x0A; // LF
+            break;
+
+        case 'L':
+            c = 0x0B; // VT
+            break;
+
+        case 'U':
+            c = 0x0E; // SO
+            break;
+
+        case 'D':
+            c = 0x08; // BS
+            break;
+
+        case 'o':
+            c = '-';
+            break;
+    }
+
+    keyclickCallback2(keydown, c);
+}
+
+void mpg_handler (mpg_t mpg)
+{
+    static int32_t pos = 0;
+    static char c = '0' - 1;
+
+    int32_t chg = 0;
+
+    if((mpg.z.position & ~0x03) - pos >= 4)
+        chg = 1;
+    else if((mpg.z.position & ~0x03) - pos <= -4)
+        chg = -1;
+
+    if(chg) {
+
+        c += chg;
+
+        if(c < '0')
+            c = '9';
+        else if(c > '9')
+            c = '0';
+
+        pos = mpg.z.position & ~0x03;
+
+        keyclickCallback2(true, c);
+    }
+}
+
+void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate)
+{
+    xlate = translate;
+    keyclickCallback2 = fn;
+    keyclickCallback = fixkey;
+    if(translate)
+        setMPGCallback(mpg_handler);
 }
 
 void keypad_setup (void)
@@ -114,16 +223,6 @@ void keypad_setup (void)
 
     I2CMasterIntClear(I2C1_BASE);
     I2CMasterIntEnable(I2C1_BASE);
-}
-
-static void enqueue_keycode (char cmd)
-{
-    uint32_t bptr = (keybuf_head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
-
-    if(bptr != keybuf_tail) {                       // If not buffer full
-        keybuf_buf[keybuf_head] = cmd;              // add data to buffer
-        keybuf_head = bptr;                         // and update pointer
-    }
 }
 
 void keypad_flush (void)
@@ -176,6 +275,19 @@ void I2CSend (uint32_t i2cAddr, const uint8_t value)
    I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_SINGLE_SEND);
 }
 
+leds_t keypad_GetLedState (void)
+{
+    return leds_state;
+}
+
+void keypad_leds (leds_t leds)
+{
+    if(leds_state.value != leds.value) {
+        leds_state.value = leds.value;
+        I2CSend(KEYPAD_I2CADDR, leds.value);
+    }
+}
+
 void I2C_interrupt_handler (void)
 {
     // based on code from https://e2e.ti.com/support/microcontrollers/tiva_arm/f/908/t/169882
@@ -183,7 +295,6 @@ void I2C_interrupt_handler (void)
     I2CMasterIntClear(I2C1_BASE);
 
 //    if(I2CMasterErr(I2C1_BASE) == I2C_MASTER_ERR_NONE)
-
 
     switch(i2c.state)
     {
@@ -259,12 +370,13 @@ static void keyclick_int_handler (void)
 {
 	uint32_t iflags = GPIOIntStatus(KEYINTR_PORT, KEYINTR_PIN);
 
-    GPIOIntClear(KEYINTR_PORT, iflags);
-
 	if(iflags & KEYINTR_PIN) {
         if(GPIOPinRead(KEYINTR_PORT, KEYINTR_PIN) != 0)
             I2CGetSWKeycode();
         else if(keyclickCallback)
             keyclickCallback(false); // fire key up event
-	}
+	} else
+	    navigator_sw_int_handler();
+
+	GPIOIntClear(KEYINTR_PORT, iflags);
 }

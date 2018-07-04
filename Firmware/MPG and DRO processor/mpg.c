@@ -3,7 +3,7 @@
  *
  * part MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * v0.0.1 (alpha) / 2018-06-27
  */
 
 /*
@@ -49,6 +49,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static mpg_t mpg;
 
+static void (*mpgCallback)(mpg_t mpg) = 0;
+
+void setMPGCallback (void (*fn)(mpg_t mpg))
+{
+    mpgCallback = fn;
+}
+
 static void MPG_X_IntHandler (void)
 {
     uint32_t pos;
@@ -60,6 +67,8 @@ static void MPG_X_IntHandler (void)
         last = pos;
         mpg.x.position = ((int32_t)pos - MID_POS);
         mpg.x.velocity = QEIVelocityGet(QEI0_BASE);
+        if(mpgCallback)
+            mpgCallback(mpg);
     }
 }
 
@@ -74,6 +83,8 @@ static void MPG_Z_IntHandler (void)
         last = pos;
         mpg.z.position = ((int32_t)pos - MID_POS);
         mpg.z.velocity = QEIVelocityGet(QEI1_BASE);
+        if(mpgCallback)
+            mpgCallback(mpg);
     }
 }
 
@@ -122,7 +133,7 @@ void MPG_Init (void)
 
     QEIDisable(QEI0_BASE);
     QEIIntDisable(QEI0_BASE, QEI_INTERROR|QEI_INTDIR|QEI_INTTIMER|QEI_INTINDEX);
-    QEIConfigure(QEI0_BASE, (QEI_CONFIG_CAPTURE_A_B|QEI_CONFIG_NO_RESET|QEI_CONFIG_QUADRATURE|QEI_CONFIG_NO_SWAP), MAX_POS);
+    QEIConfigure(QEI0_BASE, (QEI_CONFIG_CAPTURE_A_B|QEI_CONFIG_NO_RESET|QEI_CONFIG_QUADRATURE|QEI_CONFIG_SWAP), MAX_POS);
     QEIVelocityConfigure(QEI0_BASE, QEI_VELDIV_1, SysCtlClockGet() / 100);
     QEIFilterEnable(QEI0_BASE);
     QEIEnable(QEI0_BASE);

@@ -3,7 +3,7 @@
  *
  * part MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * v0.0.1 (alpha) / 2018-06-27
  */
 
 /*
@@ -53,3 +53,5 @@ void MPG_Init (void);
 void MPG_Reset (void);
 void MPG_SetActiveAxis (uint_fast8_t axis);
 mpg_t *MPG_GetPosition (void);
+void setMPGCallback (void (*fn)(mpg_t mpg));
+

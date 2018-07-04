@@ -1,5 +1,5 @@
 /*
- * keypad.c - I2C keypad interface for Texas Instruments Tiva C (TM4C123) processor
+ * boot.c - boot screen
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
@@ -8,7 +8,7 @@
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2015-2017, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -38,49 +38,52 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef _KEYPAD_H_
-#define _KEYPAD_H_
+#include <stdint.h>
+#include <stdbool.h>
 
-#define KEYBUF_SIZE 16
-#define KEYPAD_I2CADDR 0x49
+#include "boot.h"
 
-typedef enum {
-	JogMode_Fast = 0,
-	JogMode_Slow,
-	JogMode_Step
-} jogmode_t;
+#include "fonts/freepixel_9x17.h"
 
-typedef union {
-    uint8_t value;
-    struct {
-        uint8_t led1: 1,
-                led0: 1,
-                led2: 1,
-                led3: 1,
-                led4: 1,
-                led5: 1,
-                led6: 1,
-                led7: 1;
-    };
-    struct {
-        uint8_t run:     1,
-                mode:    1,
-                hold:    1,
-                spindle: 1,
-                flood:   1,
-                mist:    1,
-                unused6: 1,
-                unused7: 1;
-    };
-} leds_t;
+//#include "resources.h"
+#include "resources/test.h"
 
-void keypad_setup (void);
-void keypad_flush (void);
-char keypad_get_keycode (void);
-bool keypad_has_keycode (void);
-void keypad_leds (leds_t leds);
-leds_t keypad_GetLedState (void);
-void setKeyclickCallback (void (*fn)(bool keydown));
-void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate);
+#include "uilib/uilib.h"
 
-#endif
+char const ioEngineering[] = "©2018 Io Engineering", version[] = "v0.01 - 2018-07-01";
+
+static Canvas *canvasBoot = NULL;
+
+/*
+ * Event handlers
+ *
+ */
+
+/*
+ *  end event handlers
+ *
+ */
+
+/*
+ * Public functions
+ *
+ */
+
+void BOOTShowCanvas (lcd_display_t *screen)
+{
+	if(!canvasBoot) {
+		canvasBoot = UILibCanvasCreate(0, 0, screen->Width, screen->Height, NULL);
+		canvasBoot->widget.bgColor = Black;
+
+		Image *logo = UILibImageCreate((Widget *)canvasBoot, 35, 24, 248, 56, (void *)engineering, NULL);
+		logo->widget.fgColor = White;
+        logo->widget.bgColor = SeaGreen;
+	}
+
+	UILibCanvasDisplay(canvasBoot);
+
+	drawStringAligned(font_freepixel_9x17, 0, 190, ioEngineering, Align_Center, screen->Width, false);
+	drawStringAligned(font_freepixel_9x17, 0, 205, version, Align_Center, screen->Width, false);
+
+    delay(500);
+}

@@ -1,9 +1,9 @@
 /*
  * navigator.h - navigator interface
  *
- * part MPG/DRO for grbl on a secondary processor
+ * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * v0.0.1 (alpha) / 2018-06-25
  */
 
 /*
@@ -38,16 +38,33 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#define timerBase(t) timerB(t)
+#define timerB(t) t ## _BASE
+#define timerPeriph(t) timerP(t)
+#define timerP(t) SYSCTL_PERIPH_ ## t
+#define timerINT(t, i) timerI(t, i)
+#define timerI(t, i) INT_ ## t ## i
+
 #ifndef _NAVIGATOR_H_
 #define _NAVIGATOR_H_
 
 #define KEYBUF_SIZE 16
 #define KEYPAD_I2CADDR 0x49
 
-void navigator_setup (void);
-void navigator_reset (void);
-void navigator_configure (int32_t pos, int32_t min, int32_t max);
-int32_t navigator_get_pos (void);
-void setPosCallback (void (*fn)(bool keydown));
+#define NAVSW_PORT  GPIO_PORTC_BASE
+#define NAVSW_PIN   GPIO_PIN_7
+
+#define DEBOUNCE_TIM TIMER4
+#define DEBOUNCE_TIMER_PERIPH timerPeriph(DEBOUNCE_TIM)
+#define DEBOUNCE_TIMER_BASE timerBase(DEBOUNCE_TIM)
+#define DEBOUNCE_TIMER_INT timerINT(DEBOUNCE_TIM, A)
+
+void NavigatorInit (uint32_t xSize, uint32_t ySize);
+bool NavigatorSetPosition (uint32_t xPos, uint32_t yPos, bool callback);
+uint32_t NavigatorGetYPosition (void);
+extern void NavigatorSetEventHandler (int32_t (*eventHandler)(uint32_t ulMessage, int32_t lX, int32_t lY));
+
+// Shared...
+void navigator_sw_int_handler (void);
 
 #endif

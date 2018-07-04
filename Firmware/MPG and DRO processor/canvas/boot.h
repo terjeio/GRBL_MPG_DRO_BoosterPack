@@ -1,9 +1,9 @@
 /*
- * keypad.c - I2C keypad interface for Texas Instruments Tiva C (TM4C123) processor
+ * boot.h - boot screen
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
+ * v0.0.1 (alpha) / 2018-06-25
  */
 
 /*
@@ -38,49 +38,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef _KEYPAD_H_
-#define _KEYPAD_H_
+#ifndef _BOOT_H_
+#define _BOOT_H_
 
-#define KEYBUF_SIZE 16
-#define KEYPAD_I2CADDR 0x49
+#include "lcd/lcd.h"
 
-typedef enum {
-	JogMode_Fast = 0,
-	JogMode_Slow,
-	JogMode_Step
-} jogmode_t;
+extern char const ioEngineering[];
 
-typedef union {
-    uint8_t value;
-    struct {
-        uint8_t led1: 1,
-                led0: 1,
-                led2: 1,
-                led3: 1,
-                led4: 1,
-                led5: 1,
-                led6: 1,
-                led7: 1;
-    };
-    struct {
-        uint8_t run:     1,
-                mode:    1,
-                hold:    1,
-                spindle: 1,
-                flood:   1,
-                mist:    1,
-                unused6: 1,
-                unused7: 1;
-    };
-} leds_t;
-
-void keypad_setup (void);
-void keypad_flush (void);
-char keypad_get_keycode (void);
-bool keypad_has_keycode (void);
-void keypad_leds (leds_t leds);
-leds_t keypad_GetLedState (void);
-void setKeyclickCallback (void (*fn)(bool keydown));
-void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate);
+void BOOTShowCanvas (lcd_display_t *screen);
 
 #endif
+

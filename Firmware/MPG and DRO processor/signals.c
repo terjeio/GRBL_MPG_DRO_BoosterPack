@@ -1,7 +1,9 @@
 /*
  * signals.c - signals interface for Texas Instruments Tiva C (TM4C123) processor
  *
- * v0.0.1 (alpha) / 2018-05-08
+ * part of MPG/DRO for grbl on a secondary processor
+ *
+ * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
  */
 
 /*
@@ -40,15 +42,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "signals.h"
 #include "keypad.h"
 
-uint8_t leds = 0;
-
 void signalsInit (void)
 {
-    FPUEnable();
-    FPULazyStackingEnable();
-
-    SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
-
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
@@ -56,17 +51,26 @@ void signalsInit (void)
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
 
-    GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, MPG_MODE_PIN);
     GPIOPinTypeGPIOOutput(MPG_MODE_PORT, MPG_MODE_PIN);
+    GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, MPG_MODE_PIN);
     GPIOPadConfigSet(MPG_MODE_PORT, MPG_MODE_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD);
+    GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, 0);
 
     GPIOPinTypeGPIOOutput(MPG_GPIO0_PORT, MPG_GPIO0_PIN);
     GPIOPadConfigSet(MPG_GPIO0_PORT, MPG_GPIO0_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
     GPIOPinWrite(MPG_GPIO0_PORT, MPG_GPIO0_PIN, 0);
 
+    GPIOPinTypeGPIOOutput(GPIO3_PORT, GPIO3_PIN);
+    GPIOPadConfigSet(GPIO3_PORT, GPIO3_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
+    GPIOPinWrite(GPIO3_PORT, GPIO3_PIN, 0);
+
+
     GPIOPinWrite(SIGNALS_PORT, SIGNAL_CYCLESTART_PIN|SIGNAL_FEEDHOLD_PIN, 0);
     GPIOPinTypeGPIOOutput(SIGNALS_PORT, SIGNAL_CYCLESTART_PIN|SIGNAL_FEEDHOLD_PIN);
     GPIOPadConfigSet(SIGNALS_PORT, SIGNAL_CYCLESTART_PIN|SIGNAL_FEEDHOLD_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
+
+//    GPIOPinTypeGPIOInput(SPINDLEDIR_PORT, SPINDLEDIR_PIN);
+//    GPIOPadConfigSet(SPINDLEDIR_PORT, SPINDLEDIR_PIN, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
 
     //    Interrupt_disableSleepOnIsrExit();
 }
@@ -92,5 +96,9 @@ void signalCycleStart (bool on)
 void signalMPGMode (bool on)
 {
     GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, on ? 0 : MPG_MODE_PIN);
-    I2CSend(KEYPAD_I2CADDR, on ? 0 : 1);
+}
+
+bool signalSpindleDir (void)
+{
+    return GPIOPinRead(SPINDLEDIR_PORT, SPINDLEDIR_PIN) != 0;
 }

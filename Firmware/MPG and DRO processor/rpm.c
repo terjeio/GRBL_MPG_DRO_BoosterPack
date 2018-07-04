@@ -1,5 +1,5 @@
 /*
- * rpm.c - RPM encoder interface (can be used if not provided by grbl real-time message)
+ * rpm.c - RPM encoder interface (can be used if RPM is not provided by grbl real-time message)
  *
  * v0.0.1 (alpha) / 2018-04-26
  */

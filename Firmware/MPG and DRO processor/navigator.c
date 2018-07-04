@@ -1,9 +1,9 @@
 /*
  * navigator.c - navigator interface for Texas Instruments Tiva C (TM4C123) processor
  *
- * part MPG/DRO for grbl on a secondary processor
+ * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * v0.0.1 (alpha) / 2018-06-25
  */
 
 /*
@@ -45,25 +45,35 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "tiva.h"
 #include "navigator.h"
+#include "UILib/uilib.h"
 
+static void debounce_int_handler (void);
 static void navigator_int_handler (void);
+//static void navigator_sw_int_handler (void);
 
 static struct {
-    int32_t pos;
+    int32_t xPos;
+    int32_t yPos;
     int32_t min;
     int32_t max;
+    uint32_t sel;
+    uint32_t state;
+    uint32_t iflags;
     bool select;
+    volatile uint32_t debounce;
 } nav;
 
-static void (*posCallback)(bool keydown) = 0;
+static int32_t (*eventHandler)(uint32_t ulMessage, int32_t lX, int32_t lY) = 0;
 
-void setPosCallback (void (*fn)(bool keydown))
-{
-    posCallback = fn;
+void NavigatorSetEventHandler (int32_t (*handler)(uint32_t ulMessage, int32_t lX, int32_t lY)) {
+    eventHandler = handler;
 }
 
-void navigator_setup (void)
+void NavigatorInit (uint32_t xSize, uint32_t ySize)
 {
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
+
     // Unlock PD7 (NMI)
 
     HWREG(GPIO_PORTD_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
@@ -84,55 +94,124 @@ void navigator_setup (void)
     GPIOIntTypeSet(NAVIGATOR_SW_PORT, NAVIGATOR_SW, GPIO_BOTH_EDGES);
 //    GPIOIntEnable(NAVIGATOR_SW_PORT, NAVIGATOR_SW);
 
-    nav.pos = 0;
+    GPIOPinTypeGPIOInput(NAVSW_PORT, NAVSW_PIN);
+//    GPIOIntRegister(NAVSW_PORT, navigator_sw_int_handler); // entry handler in keypad.c
+    GPIOPadConfigSet(NAVSW_PORT, NAVSW_PIN, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+    GPIOIntTypeSet(NAVSW_PORT, NAVSW_PIN, GPIO_BOTH_EDGES);
+    GPIOIntEnable(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
+
+    SysCtlPeripheralEnable(DEBOUNCE_TIMER_PERIPH);
+    SysCtlDelay(26); // wait a bit for peripherals to wake up
+    IntPrioritySet(DEBOUNCE_TIMER_INT, 0x40); // lower priority than for Timer2 (which resets the step-dir signal)
+    TimerConfigure(DEBOUNCE_TIMER_BASE, TIMER_CFG_SPLIT_PAIR|TIMER_CFG_A_ONE_SHOT);
+    TimerControlStall(DEBOUNCE_TIMER_BASE, TIMER_A, true); //timer2 will stall in debug mode
+    TimerIntRegister(DEBOUNCE_TIMER_BASE, TIMER_A, debounce_int_handler);
+    TimerIntClear(DEBOUNCE_TIMER_BASE, 0xFFFF);
+    IntPendClear(DEBOUNCE_TIMER_INT);
+    TimerPrescaleSet(DEBOUNCE_TIMER_BASE, TIMER_A, 79); // configure for 1us per count
+    TimerLoadSet(DEBOUNCE_TIMER_BASE, TIMER_A, 32000);  // and for a total of 32ms
+    TimerIntEnable(DEBOUNCE_TIMER_BASE, TIMER_TIMA_TIMEOUT);
+
+    nav.sel = 0;
+    nav.xPos = xSize >> 2;
+    nav.yPos = 0;
     nav.min = 0;
-    nav.max = 320;
+    nav.max = ySize;
     nav.select = false;
+    nav.debounce = 0;
 }
 
-void navigator_reset (void)
+bool NavigatorSetPosition (uint32_t xPos, uint32_t yPos, bool callback)
 {
-    nav.pos = nav.min;
+//    nav.xPos = xPos;
+    nav.yPos = yPos;
+
+    if(callback && eventHandler)
+        eventHandler(WIDGET_MSG_PTR_MOVE, xPos, yPos);
+
+    return true;
 }
 
-void navigator_configure (int32_t pos, int32_t min, int32_t max)
+uint32_t NavigatorGetYPosition (void)
 {
-    nav.pos = pos;
-    nav.min = min;
-    nav.max = max;
+    return (uint32_t)nav.yPos;
 }
 
-int32_t navigator_get_pos (void)
+static void debounce_int_handler (void)
 {
-    return nav.pos;
+    TimerIntClear(DEBOUNCE_TIMER_BASE, TIMER_TIMA_TIMEOUT); // clear interrupt flag
+
+    if(nav.debounce & 0x02) {
+
+        nav.debounce &= ~0x02;
+
+        if(nav.state == GPIOPinRead(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B)) {
+
+            if(nav.iflags & NAVIGATOR_A) {
+
+               if(nav.state & NAVIGATOR_A)
+                   nav.yPos = nav.yPos + (nav.state & NAVIGATOR_B ? 1 : -1);
+               else
+                   nav.yPos = nav.yPos + (nav.state & NAVIGATOR_B ? -1 : 1);
+            }
+
+            if(nav.iflags & NAVIGATOR_B) {
+
+               if(nav.state & NAVIGATOR_B)
+                   nav.yPos = nav.yPos + (nav.state & NAVIGATOR_A ? -1 : 1);
+               else
+                   nav.yPos = nav.yPos + (nav.state &  NAVIGATOR_A ? 1 : -1);
+            }
+
+            if(nav.yPos < nav.min)
+               nav.yPos = nav.min;
+            else if(nav.yPos > nav.max)
+               nav.yPos = nav.max;
+
+            if(eventHandler)
+               eventHandler(WIDGET_MSG_PTR_MOVE, nav.xPos, nav.yPos);
+        }
+
+        GPIOIntClear(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B);
+        GPIOIntEnable(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B);
+    }
+
+    if(nav.debounce & 0x01) {
+
+        nav.debounce &= ~0x01;
+
+        if(nav.select == (GPIOPinRead(NAVSW_PORT, NAVSW_PIN) == 0)) {
+            if(eventHandler)
+                eventHandler(nav.select ? WIDGET_MSG_PTR_DOWN : WIDGET_MSG_PTR_UP, nav.xPos, nav.yPos);
+        }
+
+        GPIOIntClear(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
+        GPIOIntEnable(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
+    }
+}
+
+void navigator_sw_int_handler (void)
+{
+    if(GPIOIntStatus(NAVSW_PORT, true) & NAVSW_PIN) {
+
+        nav.select = GPIOPinRead(NAVSW_PORT, NAVSW_PIN) == 0; // !debounce
+        GPIOIntDisable(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
+
+        nav.debounce |= 0x01;
+
+        TimerLoadSet(DEBOUNCE_TIMER_BASE, TIMER_A, 20000);  // 20ms
+        TimerEnable(DEBOUNCE_TIMER_BASE, TIMER_A);
+    }
 }
 
 static void navigator_int_handler (void)
 {
-    uint32_t iflags = GPIOIntStatus(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B),
-             state  = GPIOPinRead(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B);
+    nav.state  = GPIOPinRead(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B);
+    nav.iflags = GPIOIntStatus(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B),
+    GPIOIntDisable(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B);
 
-    GPIOIntClear(NAVIGATOR_PORT, iflags);
+    nav.debounce |= 0x02;
 
-    if(iflags & NAVIGATOR_A) {
-
-        if(state & NAVIGATOR_A)
-            nav.pos = nav.pos + (state & NAVIGATOR_B ? 1 : -1);
-        else
-            nav.pos = nav.pos + (state & NAVIGATOR_B ? -1 : 1);
-    }
-
-    if(iflags & NAVIGATOR_B) {
-
-        if(state & NAVIGATOR_B)
-            nav.pos = nav.pos + (state & NAVIGATOR_A ? -1 : 1);
-        else
-            nav.pos = nav.pos + (state &  NAVIGATOR_A ? 1 : -1);
-
-    }
-
-    if(nav.pos < nav.min)
-        nav.pos = nav.min;
-    else if(nav.pos > nav.max)
-        nav.pos = nav.max;
+    TimerLoadSet(DEBOUNCE_TIMER_BASE, TIMER_A, 2000);  // 2ms
+    TimerEnable(DEBOUNCE_TIMER_BASE, TIMER_A);
 }

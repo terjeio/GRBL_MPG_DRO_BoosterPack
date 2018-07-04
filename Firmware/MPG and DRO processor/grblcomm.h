@@ -1,5 +1,5 @@
 /*
- * keypad.c - I2C keypad interface for Texas Instruments Tiva C (TM4C123) processor
+ * grblcomm.h - collects and dispatches lines of data from grbls serial output stream
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
@@ -38,49 +38,43 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef _KEYPAD_H_
-#define _KEYPAD_H_
+#ifndef _GRBLCOMM_H_
+#define _GRBLCOMM_H_
 
-#define KEYBUF_SIZE 16
-#define KEYPAD_I2CADDR 0x49
+#include <stdbool.h>
 
-typedef enum {
-	JogMode_Fast = 0,
-	JogMode_Slow,
-	JogMode_Step
-} jogmode_t;
+#include "grbl.h"
+#include "serial.h"
 
-typedef union {
-    uint8_t value;
-    struct {
-        uint8_t led1: 1,
-                led0: 1,
-                led2: 1,
-                led3: 1,
-                led4: 1,
-                led5: 1,
-                led6: 1,
-                led7: 1;
-    };
-    struct {
-        uint8_t run:     1,
-                mode:    1,
-                hold:    1,
-                spindle: 1,
-                flood:   1,
-                mist:    1,
-                unused6: 1,
-                unused7: 1;
-    };
-} leds_t;
+#define NUMSTATES 13
 
-void keypad_setup (void);
-void keypad_flush (void);
-char keypad_get_keycode (void);
-bool keypad_has_keycode (void);
-void keypad_leds (leds_t leds);
-leds_t keypad_GetLedState (void);
-void setKeyclickCallback (void (*fn)(bool keydown));
-void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate);
+typedef enum
+{
+    Unknown = 0,
+    Idle,
+    Run,
+    Jog,
+    Hold0,
+    Hold1,
+    Alarm,
+    Check,
+    Door0,
+    Door1,
+    Door2,
+    Door3,
+    Tool
+} grbl_state_t;
+
+typedef struct {
+    grbl_state_t state;
+    char state_text[8];
+} grbl_t;
+
+void setGrblReceiveCallback (void (*fn)(char *line));
+void setGrblTransmitCallback (void (*fn)(bool ok, char *line));
+void grblPollSerial (void);
+void grblSerialFlush (void);
+void grblSendSerial (char *line);
+bool grblParseState (char *state, grbl_t *grbl);
 
 #endif

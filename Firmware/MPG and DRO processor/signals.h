@@ -1,7 +1,9 @@
 /*
  * signals.h - signals interface
  *
- * v0.0.1 (alpha) / 2018-05-07
+ * part of MPG/DRO for grbl on a secondary processor
+ *
+ * v0.0.1 (alpha) / 2018-06-25
  */
 
 /*
@@ -47,7 +49,16 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SIGNAL_CYCLESTART_PIN   GPIO_PIN_0
 #define SIGNAL_FEEDHOLD_PIN     GPIO_PIN_1
 
+#define SPINDLEDIR_PORT      GPIO_PORTB_BASE
+#define SPINDLEDIR_PIN       GPIO_PIN_3
+
+#define GPIO3_PORT      GPIO_PORTF_BASE
+#define GPIO3_PIN       GPIO_PIN_3
+
+
 void signalsInit (void);
 void signalFeedHold (bool on);
 void signalCycleStart (bool on);
 void signalMPGMode (bool on);
+bool signalSpindleDir (void);
+
