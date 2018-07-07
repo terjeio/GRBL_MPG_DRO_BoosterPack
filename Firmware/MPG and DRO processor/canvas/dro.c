@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v1.0.5 / 2018-07-01 / ©Io Engineering / Terje
+ * v1.0.5 / 2018-07-05 / ©Io Engineering / Terje
  */
 
 /*
@@ -73,11 +73,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define POSFONT font_arial_48x55
 
 // Event flags
-#define EVENT_DRO     (1<<0)
-#define EVENT_MPG     (1<<1)
-#define EVENT_SIGNALS (1<<2)
-#define EVENT_KEYDOWN (1<<3)
-#define EVENT_KEYUP   (1<<4)
+#define EVENT_DRO            (1<<0)
+#define EVENT_MPG            (1<<1)
+#define EVENT_SIGNALS        (1<<2)
+#define EVENT_KEYDOWN        (1<<3)
+#define EVENT_KEYUP          (1<<4)
+#define EVENT_JOGMODECHANGED (1<<5)
 
 #define MIN(a, b) (((a) > (b)) ? (b) : (a))
 
@@ -143,17 +144,25 @@ const float mpgFactors[2] = {1.0f, 10.0f};
 
 volatile uint_fast8_t event = 0;
 static bool mpgMove = false, endMove = false;
-static bool msg = false, jogging = false, keyreleased = true, disableMPG = false, mpgReset = false;
+static bool msg = false, jogging = false, keyreleased = true, disableMPG = false, mpgReset = false, settingsOK = false;
 static bool WCOChanged = false, absDistance = true, modeMPG = false, awaitWCO = false, useWPos = false, active = false;
 static float feedRate = 0.0f, angle = 0.0f, spindleRPM = 0.0f;
 static axis_data_t axis[3];
 static jogmode_t jogMode = JogMode_Slow;
-static jog_config_t jog_config;
 static event_counters_t event_count;
 static Canvas *canvasMain = 0;
 static TextBox *txtResponseL = NULL, *txtResponseR = NULL, *txtGrblState = NULL;
 
 static lcd_display_t *screen;
+
+static jog_config_t jog_config = {
+    .step_speed    = 100.0f,
+    .slow_speed    = 600.0f,
+    .fast_speed    = 3000.0f,
+    .step_distance = 0.1f,
+    .slow_distance = 500.0f,
+    .fast_distance = 500.0f
+};
 
 static event_counters_t event_interval = {
     .dro_refresh  = 20,
@@ -176,6 +185,8 @@ static grbl_t grbl = {
     .state = Unknown,
     .state_text = " "
 };
+
+static void parseGrblData (char *line);
 
 void p_debug(int32_t val) {
     static char buffer[12] = "";
@@ -457,9 +468,8 @@ static void displayGRBLState (void)
     keypad_leds(leds);
 }
 
-static void setJogMode (jogmode_t mode)
+static void displayJogMode (jogmode_t jogMode)
 {
-    jogMode = mode;
     setColor(jogMode == JogMode_Fast ? Red : White);
     drawString(font_23x16, 265, RPMROW - 3, jogModeStr[jogMode], true);
     setColor(White);
@@ -467,16 +477,7 @@ static void setJogMode (jogmode_t mode)
 
 static void driver_settings_restore (uint8_t restore_flag)
 {
-    if(restore_flag) {
-        jog_config.step_speed    = 100.0f;
-        jog_config.slow_speed    = 600.0f;
-        jog_config.fast_speed    = 3000.0f;
-        jog_config.step_distance = 0.25f;
-        jog_config.slow_distance = 500.0f;
-        jog_config.fast_distance = 3000.0f;
 
-//        keypad_write_settings();
-    }
 }
 
 static void processKeypress (void)
@@ -495,11 +496,11 @@ static void processKeypress (void)
             if(!modeMPG || grbl.state != Hold0)
                 signalMPGMode(!modeMPG);
             break;
-
+/*
         case 'u':
             disableMPG = true;
             break;
-
+*/
         case 'S':                                   // Spindle
             if(modeMPG && grbl.state == Idle) {
                 bool spindle_on = !spindle_state.on && spindle_state.mpg_rpm > 0;
@@ -585,52 +586,64 @@ static void processKeypress (void)
             }
             break;
 
-        case 'h':                                   // "toggle" jog mode
-            setJogMode(jogMode == JogMode_Step ? JogMode_Fast : (jogMode == JogMode_Fast ? JogMode_Slow : JogMode_Step));
-            break;
-
         case 'H':                                   // Home axes
 //            strcpy(command, "$H");
             break;
 
-        case 'R':                                   // Jog X-axis right
+        case JOG_XR:                                // Jog X
             strcpy(command, "$J=G91X?F");
             break;
 
-        case 'L':                                   // Jog X-axis left
+        case JOG_XL:                                // Jog -X
             strcpy(command, "$J=G91X-?F");
             break;
 
-        case 'F':                                   // Jog Y-axis forward
+        case JOG_YF:                                // Jog Y
             strcpy(command, "$J=G91Y?F");
             break;
 
-        case 'B':                                   // Jog Y-axis back
+        case JOG_YB:                                // Jog -Y
             strcpy(command, "$J=G91Y-?F");
             break;
 
-        case 'q':                                   // Jog XY-axes SE
-            strcpy(command, "$J=G91X-?Z?F");
-            break;
-
-        case 'r':                                   // Jog XY-axes NE
-            strcpy(command, "$J=G91X?Z-?F");
-            break;
-
-        case 's':                                   // Jog XY-axes NW
-            strcpy(command, "$J=G91X?Z?F");
-            break;
-
-        case 't':                                   // Jog XY-axes SW
-            strcpy(command, "$J=G91X-?Z-?F");
-            break;
-
-        case 'U':                                   // Jog Z-axis up
+        case JOG_ZU:                                // Jog Z
             strcpy(command, "$J=G91Z?F");
             break;
 
-        case 'D':                                   // Jog Z-axis down
+        case JOG_ZD:                                // Jog -Z
             strcpy(command, "$J=G91Z-?F");
+            break;
+
+        case JOG_XRYF:                              // Jog XY
+            strcpy(command, "$J=G91X?Y?F");
+            break;
+
+        case JOG_XRYB:                              // Jog X-Y
+            strcpy(command, "$J=G91X?Y-?F");
+            break;
+
+        case JOG_XLYF:                              // Jog -XY
+            strcpy(command, "$J=G91X-?Y?F");
+            break;
+
+        case JOG_XLYB:                              // Jog -X-Y
+            strcpy(command, "$J=G91X-?Y-?F");
+            break;
+
+        case JOG_XRZU:                              // Jog XZ
+            strcpy(command, "$J=G91X?Z?F");
+            break;
+
+        case JOG_XRZD:                              // Jog X-Z
+            strcpy(command, "$J=G91X?Z-?F");
+            break;
+
+        case JOG_XLZU:                              // Jog -XZ
+            strcpy(command, "$J=G91X-?Z?F");
+            break;
+
+        case JOG_XLZD:                              // Jog -X-Z
+            strcpy(command, "$J=G91X-?Z-?F");
             break;
     }
 
@@ -680,6 +693,62 @@ void keyEvent (bool keyDown)
         event |= EVENT_KEYUP;
 
     keyreleased = !keyDown;
+}
+
+void jogModeChanged (jogmode_t mode)
+{
+    jogMode = mode;
+    event |= EVENT_JOGMODECHANGED;
+}
+
+void parseSettings (char *line)
+{
+    uint_fast16_t setting;
+    float value;
+
+    if(!strcmp(line, "ok")) {
+        settingsOK = true;
+        setGrblReceiveCallback(parseGrblData);
+    } else if(line[0] == '$' && strchr(line, '=')) {
+
+        line = strtok(&line[1], "=");
+        setting = atoi(line);
+        line = strtok(NULL, "=");
+        value = atof(line);
+
+        switch(setting) {
+
+            case 50:
+                jog_config.step_speed = value;
+                break;
+
+            case 51:
+                jog_config.slow_speed = value;
+                break;
+
+            case 52:
+                jog_config.fast_speed = value;
+                break;
+
+            case 53:
+                jog_config.step_distance = value;
+                break;
+
+            case 54:
+                jog_config.slow_distance = value;
+                break;
+
+            case 55:
+                jog_config.fast_distance = value;
+                break;
+        }
+    }
+}
+
+void awaitOK (char *line)
+{
+    if(!strcmp(line, "ok"))
+        setGrblReceiveCallback(parseSettings);
 }
 
 static void parseGrblData (char *line)
@@ -760,6 +829,7 @@ static void parseGrblData (char *line)
             } else if(!strncmp(line, "MPG:", 4)) {
                 modeMPG = line[4] == '1';
                 signalMPGMode(modeMPG);
+                keypad_forward(!modeMPG);
                 if(modeMPG) {
                     serialWriteLn("$G");
                     MPG_ResetPosition(true);
@@ -823,6 +893,11 @@ static void parseGrblData (char *line)
 
         keypad_leds(leds);
 
+        if(!settingsOK && modeMPG) {
+            serialWriteLn("$$");
+            setGrblReceiveCallback(awaitOK);
+        }
+
     } else if(!strncmp(line, "[MSG:", 5)) {
         msg = true;
         UILibTextBoxDisplay(txtResponseL, &line[5]);
@@ -879,6 +954,11 @@ void DROProcessEvents (void)
                 serialPutC('?'); // Request realtime status from grbl
         }
 
+        if(event & EVENT_JOGMODECHANGED) {
+            displayJogMode(jogMode);
+            event &= ~EVENT_JOGMODECHANGED;
+        }
+
         if(event & EVENT_SIGNALS) {
             event &= ~EVENT_SIGNALS;
             signalCycleStart(false);
@@ -912,7 +992,7 @@ static void canvasHandler (Widget *self, Event *uievent)
             uievent->claimed = true;
             if(grbl.state == Idle || grbl.state == Alarm || grbl.state == Unknown) {
                 active = false;
-                MenuShowCanvas();
+                MenuShowCanvas(modeMPG);
             }
             break;
 
@@ -936,7 +1016,7 @@ static void canvasHandler (Widget *self, Event *uievent)
             drawString(font_freepixel_17x34, 5, RPMROW, "RPM:", false);
             drawString(font_23x16, 220, RPMROW - 3, "Jog:", false);
             drawString(font_23x16, 87, STATUSROW, "Feed:", true);
-            setJogMode(jogMode);
+            setJogModeChangedCallback(jogModeChanged);
             displayGRBLState();
             if(modeMPG) {
                 displayMPGFactor(X_AXIS, axis[X_AXIS].mpg_idx);
@@ -945,15 +1025,18 @@ static void canvasHandler (Widget *self, Event *uievent)
             }
             WCOChanged = true;
             leds = keypad_GetLedState();
+            keypad_forward(!modeMPG);
             setKeyclickCallback(keyEvent);
             setGrblReceiveCallback(parseGrblData);
-            NavigatorSetPosition(0, (uint32_t)(spindleRPM / 3.0f), 0);
+            NavigatorSetPosition(0, (uint32_t)(spindleRPM / 3.0f), false);
             active = true;
             break;
 
         case EventWidgetClosed:
-            setKeyclickCallback(0);
-            setGrblReceiveCallback(0);
+            setKeyclickCallback(NULL);
+            setJogModeChangedCallback(NULL);
+            setGrblReceiveCallback(NULL);
+            keypad_forward(false);
             active = false;
             break;
 

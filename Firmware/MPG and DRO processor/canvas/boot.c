@@ -50,7 +50,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "uilib/uilib.h"
 
-char const ioEngineering[] = "©2018 Io Engineering", version[] = "v0.01 - 2018-07-01";
+char const ioEngineering[] = "©2018 Io Engineering", version[] = "v0.01 - 2018-07-07";
 
 static Canvas *canvasBoot = NULL;
 

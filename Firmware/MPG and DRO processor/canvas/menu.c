@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-06 / ©Io Engineering / Terje
  */
 
 /*
@@ -42,6 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "canvas/grblutils.h"
 #include "uilib/uilib.h"
 
+static bool modeMPG;
 static Canvas *canvasConfig = 0, *canvasPrevious;
 
 /*
@@ -54,7 +55,9 @@ static void handlerConfig (Widget *self, Event *event)
 	if(self) switch(event->reason) {
 
 		case EventPointerUp:
+            event->claimed = true;
 			UILibButtonFlash((Button *)self);
+	        UILibWidgetDeselect(self);
 			break;
 
 		case EventPointerLeave:
@@ -66,7 +69,9 @@ static void handlerConfig (Widget *self, Event *event)
 static void handlerUtilities (Widget *self, Event *event)
 {
 	if(event->reason == EventPointerUp) {
+        event->claimed = true;
 		UILibButtonFlash((Button *)self);
+        UILibWidgetDeselect(self);
 		GRBLUtilsShowCanvas();
 	}
 }
@@ -74,9 +79,9 @@ static void handlerUtilities (Widget *self, Event *event)
 static void handlerThreading (Widget *self, Event *event)
 {
 	if(event->reason == EventPointerUp) {
-		UILibButtonFlash((Button *)self);
-
         event->claimed = true;
+        UILibButtonFlash((Button *)self);
+		UILibWidgetDeselect(self);
         ThreadingShowCanvas();
 	}
 }
@@ -87,6 +92,7 @@ static void handlerExit (Widget *self, Event *event)
 
 		case EventPointerUp:
 		    event->claimed = true;
+	        UILibWidgetDeselect(self);
 			UILibCanvasDisplay(canvasPrevious);
 			break;
 
@@ -96,14 +102,19 @@ static void handlerExit (Widget *self, Event *event)
 	}
 }
 
-static void canvasHandler (Widget *self, Event *event)
+static void handlerCanvas (Widget *self, Event *event)
 {
     switch(event->reason) {
 
         case EventWidgetPainted:
             setColor(White);
             drawStringAligned(font_23x16, 0, 22, "Main menu", Align_Center, self->width, false);
-            UILibApplyEnter(canvasConfig->widget.firstChild);
+            Widget *widget = canvasConfig->widget.firstChild;
+            while(widget) {
+                if(widget->privateData == (void *)1)
+                    UILibWidgetEnable(widget, modeMPG);
+                widget = widget->nextSibling;
+            }
             break;
     }
 }
@@ -118,15 +129,22 @@ static void canvasHandler (Widget *self, Event *event)
  *
  */
 
-void MenuShowCanvas (void)
+void MenuShowCanvas (bool mpgMode)
 {
+    modeMPG = mpgMode;
+
 	if(!canvasConfig) {
-		canvasConfig = UILibCanvasCreate(0, 0, 320, 240, canvasHandler);
+
+	    Widget *btn;
+
+		canvasConfig = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
 
 		UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 40, "Exit", handlerExit), 250);
-		UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 65, "Threading", handlerThreading), 250);
-		UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 90, "grbl Utilities", handlerUtilities), 250);
-		UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 115, "Configure", handlerConfig), 250);
+	    btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 65, "Threading", handlerThreading), 250);
+        btn->privateData = (void *)1;
+	    btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 90, "grbl Utilities", handlerUtilities), 250);
+        btn->privateData = (void *)1;
+	    UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 115, "Configure", handlerConfig), 250);
 	}
 
 	canvasPrevious = UILibCanvasGetCurrent();

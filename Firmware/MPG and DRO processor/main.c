@@ -63,6 +63,7 @@ void main (void)
     initGraphics();
     setOrientation(Orientation_Horizontal);
     UILibInit();
+    UILibSetTabnav(6);
 
 //    TOUCH_Calibrate();
 

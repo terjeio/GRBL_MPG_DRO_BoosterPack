@@ -123,7 +123,7 @@ void NavigatorInit (uint32_t xSize, uint32_t ySize)
 
 bool NavigatorSetPosition (uint32_t xPos, uint32_t yPos, bool callback)
 {
-//    nav.xPos = xPos;
+    nav.xPos = xPos;
     nav.yPos = yPos;
 
     if(callback && eventHandler)

@@ -49,7 +49,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define CR   0x0D
 #define CAN  0x18
 #define DEL  0x7F
-#define EOL  "\r\n"
+#define EOL  "\r"
 
 #define XONOK (XON|0x80)
 #define XOFFOK (XOFF|0x80)

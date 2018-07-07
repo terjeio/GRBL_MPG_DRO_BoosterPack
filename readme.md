@@ -14,6 +14,8 @@ Features:
 
 Parts of alpha-version of supporting code is now available, not complete as there are dependencies to several libraries that need to be published separately. The code is written so it is should be easy to port, all processor dependent code is in separate files. 
 
+All core funtionality is now up and running, GUI is 100% event driven making it easy to extend with new dialogs. Shared dialogs (canvases) created for common data (such as DOC, feed rate, RPM), input review/confirmation and GCode transfer to grbl. I am considering moving grbl data parsing to single code unit for standardisation, (partial) parsing is now done in a few places.
+
 ![Testbench setup](media/IMG_8515.jpg)
 
 #### LaunchPad pin assignments:

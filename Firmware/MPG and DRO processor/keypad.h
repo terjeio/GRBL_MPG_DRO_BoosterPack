@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-05 / ©Io Engineering / Terje
  */
 
 /*
@@ -44,6 +44,21 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define KEYBUF_SIZE 16
 #define KEYPAD_I2CADDR 0x49
 
+#define JOG_XR   'R'
+#define JOG_XL   'L'
+#define JOG_YF   'F'
+#define JOG_YB   'B'
+#define JOG_ZU   'U'
+#define JOG_ZD   'D'
+#define JOG_XRYF 'r'
+#define JOG_XRYB 'q'
+#define JOG_XLYF 's'
+#define JOG_XLYB 't'
+#define JOG_XRZU 'w'
+#define JOG_XRZD 'v'
+#define JOG_XLZU 'u'
+#define JOG_XLZD 'x'
+
 typedef enum {
 	JogMode_Fast = 0,
 	JogMode_Slow,
@@ -79,7 +94,11 @@ void keypad_flush (void);
 char keypad_get_keycode (void);
 bool keypad_has_keycode (void);
 void keypad_leds (leds_t leds);
+void keypad_forward (bool on);
+jogmode_t keypadJogModeNext (void);
+jogmode_t keypadGetJogMode (void);
 leds_t keypad_GetLedState (void);
+void setJogModeChangedCallback (void (*fn)(jogmode_t jogMode));
 void setKeyclickCallback (void (*fn)(bool keydown));
 void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate);
 

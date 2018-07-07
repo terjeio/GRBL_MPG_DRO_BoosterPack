@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-07 / ©Io Engineering / Terje
  */
 
 /*
@@ -53,13 +53,21 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define XROW 85
 #define ZROW 110
 
-static bool run, keyDownEvent;
+typedef enum {
+    JobInit = 0,
+    JobRun,
+    JobComplete
+} job_state_t;
+
+static bool keyDownEvent, grblReady;
+static volatile uint32_t awaitResponse;
 static uint_fast8_t rqdly;
 static Canvas *canvasSender = NULL, *canvasPrevious;
 static Button *btnCancel;
 static TextBox *txtXPos, *txtZPos, *txtPass;
 static grbl_t grbl;
 static leds_t leds;
+static job_state_t jobState;
 static gcode_t *(*getGCode)(bool ok, char *string) = NULL;
 
 /*
@@ -75,12 +83,16 @@ static void keypressEventHandler (bool keyDown)
 
 static void sendGCode (bool ok, char *line)
 {
-    if(run && ok) {
+    if(ok && jobState != JobComplete) {
 
-        gcode_t *gcode = getGCode(ok, line);
+        gcode_t *gcode = getGCode(jobState == JobInit, line);
 
-        if(gcode->block[0])
+        jobState = gcode->complete ? JobComplete : JobRun;
+
+        if(!gcode->complete)
             grblSendSerial(gcode->block);
+
+        return;
     }
 
     if(line[0] == '<') {
@@ -89,15 +101,15 @@ static void sendGCode (bool ok, char *line)
 
         if(line && grblParseState(line, &grbl)) {
 
-            if(!run && grbl.state == Idle) {
-                setGrblTransmitCallback(NULL);
-                UILibCanvasDisplay(canvasPrevious);
-            }
-//            UILibTextBoxDisplay(txtStatus, grbl.state_text);
-
             leds.run = grbl.state == Run || grbl.state == Jog;
             leds.hold = grbl.state == Hold0 || grbl.state == Hold1;
             keypad_leds(leds);
+
+            if(jobState == JobComplete && grbl.state == Idle)
+                UILibCanvasDisplay(canvasPrevious);
+
+//            UILibTextBoxDisplay(txtStatus, grbl.state_text);
+
         }
 
         if(grbl.state == Run) {
@@ -140,9 +152,7 @@ static void sendGCode (bool ok, char *line)
                                break;
                         }
                     }
-
                     keypad_leds(leds);
-
                 }
 
                 line = strtok(NULL, "|");
@@ -152,12 +162,19 @@ static void sendGCode (bool ok, char *line)
         UILibTextBoxDisplay(txtPass, &line[5]);
 }
 
+static void checkGRBL (bool ok, char *line)
+{
+    if(!(grblReady = ok))
+        UILibTextBoxDisplay(txtPass, line);
+}
+
 static void handlerCancel (Widget *self, Event *event)
 {
     switch(event->reason) {
 
         case EventPointerUp:
             event->claimed = true;
+            serialPutC(CMD_STOP); // TODO: grbl need a graceful way to cancel a job after hold is complete, claim until Hold?
             UILibCanvasDisplay(canvasPrevious); // TODO: add code! if running do a hold and then a graceful stop?
             break;
 
@@ -172,8 +189,23 @@ static void canvasHandler (Widget *self, Event *event)
     switch(event->reason) {
 
         case EventNullEvent:
-            if(!--rqdly) {
-                serialPutC('?'); // Request realtime status from grbl
+
+            if(!rqdly--) {
+                if(awaitResponse) { // Sync protocol
+                    if(!--awaitResponse) {
+                        if(!grblReady)
+                            grblSendSerial(""); // Send another empty string to check if ready
+                    } else {
+                        UILibTextBoxClear(txtPass);
+                        setGrblTransmitCallback(sendGCode);
+                        setKeyclickCallback(keypressEventHandler);
+                        jobState = JobInit;
+                        keyDownEvent = false;
+                        leds = keypad_GetLedState();
+                        sendGCode(true, ""); // Send first block to start transmission
+                    }
+                } else if(grblReady)
+                    serialPutC('?'); // Request realtime status from grbl
                 rqdly = 20;
             }
 
@@ -207,19 +239,19 @@ static void canvasHandler (Widget *self, Event *event)
             drawStringAligned(font_23x16, 0, 22, "GCode Sender", Align_Center, self->width, false);
             drawString(font_23x16, 10, XROW, "X:", false);
             drawString(font_23x16, 10, ZROW, "Z:", false);
-            setGrblTransmitCallback(sendGCode);
-            setKeyclickCallback(keypressEventHandler);
-            UILibApplyEnter((Widget *)btnCancel);
             rqdly = 20;
-            keyDownEvent = false;
+            grblReady = false;
+            awaitResponse = 5; // Try 5 times (5 x 20 x 10ms = 1 second) to see if grbl is responsive
             grbl.state = Unknown;
-            leds = keypad_GetLedState();
-            grblSendSerial(""); // send empty string to kickstart sending
+            setGrblTransmitCallback(checkGRBL);
+            grblSendSerial(""); // Send empty string to trigger response
             break;
 
         case EventWidgetClose:
-            serialPutC(CMD_FEED_HOLD); // TODO: grbl need a graceful way to cancel a job after hold is complete, claim until Hold?
-            run = false;
+            setGrblTransmitCallback(NULL);
+            setKeyclickCallback(NULL);
+            if(grblReady)
+                grblSendSerial("M2"); // End program
             break;
     }
 }
@@ -237,7 +269,6 @@ static void canvasHandler (Widget *self, Event *event)
 void SenderShowCanvas (gcode_t *(*fn)(bool ok, char *line))
 {
     getGCode = fn;
-    run = true;
 
     if(!canvasSender) {
         canvasSender = UILibCanvasCreate(0, 0, 320, 240, canvasHandler);

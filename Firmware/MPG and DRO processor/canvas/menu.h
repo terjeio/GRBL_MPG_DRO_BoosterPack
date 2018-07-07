@@ -41,6 +41,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _MENU_H_
 #define _MENU_H_
 
-void MenuShowCanvas (void);
+#include <stdbool.h>
+
+void MenuShowCanvas (bool mpgMode);
 
 #endif

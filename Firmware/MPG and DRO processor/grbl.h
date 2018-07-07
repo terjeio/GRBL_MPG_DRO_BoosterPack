@@ -28,11 +28,14 @@
 // g-code programs, maybe selected for interface programs.
 // NOTE: If changed, manually update help message in report.c.
 
-#define CMD_RESET 0x18 // ctrl-x.
-#define CMD_EXIT 0x03 // ctrl-c.
+#define CMD_EXIT 0x03 // ctrl-C
+#define CMD_RESET 0x18 // ctrl-X
+#define CMD_STOP 0x19 // ctrl-Y
 #define CMD_STATUS_REPORT '?'
 #define CMD_CYCLE_START '~'
 #define CMD_FEED_HOLD '!'
+#define CMD_PID_REPORT '#'
+
 
 // NOTE: All override realtime commands must be in the extended ASCII character set, starting
 // at character value 128 (0x80) and up to 255 (0xFF). If the normal set of realtime commands,

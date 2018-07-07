@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-04 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-07 / ©Io Engineering / Terje
  */
 
 /*
@@ -61,15 +61,22 @@ static void handlerReset (Widget *self, Event *event)
 
 static void handlerUnlock (Widget *self, Event *event)
 {
-    if(event->reason == EventPointerUp) {
-        UILibButtonFlash((Button *)self);
-        serialWriteLn("$X");
+    switch(event->reason) {
+
+        case EventPointerUp:
+            UILibButtonFlash((Button *)self);
+            serialWriteLn("$X");
+            break;
+
+        case EventPointerLeave:
+            event->claimed = event->y > self->yMax;
+            break;
     }
 }
 
 static void handlerExit (Widget *self, Event *event)
 {
-    if(self) switch(event->reason) {
+    switch(event->reason) {
 
         case EventPointerUp:
             event->claimed = true;
@@ -115,6 +122,4 @@ void GRBLUtilsShowCanvas (void)
     setGrblReceiveCallback(showResponse);
     setColor(White);
     drawStringAligned(font_23x16, 0, 22, "grbl Utilities", Align_Center, 320, false);
-
-    UILibApplyEnter(canvasUtils->widget.firstChild);
 }

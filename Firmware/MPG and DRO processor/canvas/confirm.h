@@ -1,14 +1,14 @@
 /*
- * canvas/sender.h - GCode sender canvas
+ * canvas/confirm.h - review & confirm canvas
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-07 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-05 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2015, Terje Io
+Copyright (c) 2018, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -38,16 +38,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef _THREADING_H_
-#define _THREADING_H_
+#ifndef _CONFIRM_H_
+#define _CONFIRM_H_
+
+#include "uilib/uilib.h"
 
 typedef struct {
-    uint32_t pass;
-    uint32_t passes;
-    char *block;
-    bool complete;
-} gcode_t;
+    char *string;
+    uint8_t counter;
+    align_t align;
+    Font *font;
+    RGBColor_t bgColor;
+    RGBColor_t fgColor;
+} confirm_line_t;
 
-void SenderShowCanvas (gcode_t *(*getGCode)(bool init, char *line));
+void MenuShowConfirm (confirm_line_t *(*getLine)(void), gcode_t *(*getGCode)(bool ok, char *line));
 
 #endif

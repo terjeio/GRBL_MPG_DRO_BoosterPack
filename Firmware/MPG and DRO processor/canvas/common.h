@@ -1,9 +1,9 @@
 /*
- * canvas/sender.h - GCode sender canvas
+ * canvas/common.h - common data entry canvas
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-07 / ©Io Engineering / Terje
+ * v0.0.1 (alpha) / 2018-07-05 / ©Io Engineering / Terje
  */
 
 /*
@@ -38,16 +38,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef _THREADING_H_
-#define _THREADING_H_
+#ifndef _COMMON_H_
+#define _COMMON_H_
 
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "uilib/uilib.h"
 typedef struct {
-    uint32_t pass;
+    float doc;
+    float rpm;
+    float feed_rate;
     uint32_t passes;
-    char *block;
-    bool complete;
-} gcode_t;
+} common_t;
 
-void SenderShowCanvas (gcode_t *(*getGCode)(bool init, char *line));
+void CommonShowCanvas (Canvas *next, common_t *commmon);
 
 #endif
