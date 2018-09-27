@@ -8,7 +8,7 @@
 
 /*
 
-Copyright (c) 2015, Terje Io
+Copyright (c) 2018, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -45,11 +45,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 
 #include "uilib/uilib.h"
+
 typedef struct {
-    float doc;
-    float rpm;
-    float feed_rate;
     uint32_t passes;
+    float doc;
+    float feed_rate;
+    float rpm;
+    bool ccw;
+    bool flood;
+    bool mist;
 } common_t;
 
 void CommonShowCanvas (Canvas *next, common_t *commmon);

@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-06 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -91,7 +91,6 @@ static void handlerExit (Widget *self, Event *event)
 	if(self) switch(event->reason) {
 
 		case EventPointerUp:
-		    event->claimed = true;
 	        UILibWidgetDeselect(self);
 			UILibCanvasDisplay(canvasPrevious);
 			break;

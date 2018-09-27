@@ -1,9 +1,7 @@
 /*
- * signals.h - signals interface
+ * config.h - MPG/DRO for grbl on a secondary processor
  *
- * part of MPG/DRO for grbl on a secondary processor
- *
- * v0.0.1 (alpha) / 2018-06-25
+ * v0.0.1 / 2018-07-24 / ©Io Engineering / Terje
  */
 
 /*
@@ -38,12 +36,45 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include <stdint.h>
-#include <stdbool.h>
+#ifndef _MPG_CONFIG_H_
+#define _MPG_CONFIG_H_
 
-void signalsInit (void);
-void signalFeedHold (bool on);
-void signalCycleStart (bool on);
-void signalMPGMode (bool on);
-bool signalSpindleDir (void);
+#include "tiva.h"
+
+#define KEYINTR_PIN  GPIO_PIN_4
+#define KEYINTR_PORT GPIO_PORTC_BASE
+
+#define KEYPAD_I2CADDR 0x49
+
+#define NAVIGATOR_PORT  GPIO_PORTD_BASE
+#define NAVIGATOR_A     GPIO_PIN_6
+#define NAVIGATOR_B     GPIO_PIN_7
+
+#define NAVIGATOR_SW_PORT   GPIO_PORTC_BASE
+#define NAVIGATOR_SW_PIN    GPIO_PIN_7
+
+#define DEBOUNCE_TIM            TIMER4
+#define DEBOUNCE_TIMER_PERIPH   timerPeriph(DEBOUNCE_TIM)
+#define DEBOUNCE_TIMER_BASE     timerBase(DEBOUNCE_TIM)
+#define DEBOUNCE_TIMER_INT      timerINT(DEBOUNCE_TIM, A)
+
+// GPIO
+
+#define MPG_MODE_PERIPH     SYSCTL_PERIPH_GPIOB
+#define MPG_MODE_PORT       GPIO_PORTB_BASE     // GPIO0
+#define MPG_MODE_PIN        GPIO_PIN_3
+
+#define GPIO1_PORT          GPIO_PORTB_BASE     // GPIO1
+#define GPIO1_PIN           GPIO_PIN_2
+
+#define SPINDLEDIR_PORT     GPIO_PORTF_BASE     // GPIO1
+#define SPINDLEDIR_PIN      GPIO_PIN_3
+
+// GRBL SIGNALS
+
+#define SIGNALS_PORT            GPIO_PORTE_BASE
+#define SIGNAL_CYCLESTART_PIN   GPIO_PIN_0
+#define SIGNAL_FEEDHOLD_PIN     GPIO_PIN_1
+
+#endif
 

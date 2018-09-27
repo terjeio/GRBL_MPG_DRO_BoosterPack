@@ -38,12 +38,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 
-#include "tiva.h"
+#include "config.h"
 #include "navigator.h"
 #include "UILib/uilib.h"
 
@@ -89,16 +86,11 @@ void NavigatorInit (uint32_t xSize, uint32_t ySize)
     GPIOIntTypeSet(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B, GPIO_BOTH_EDGES);
     GPIOIntEnable(NAVIGATOR_PORT, NAVIGATOR_A|NAVIGATOR_B);
 
-    GPIOPinTypeGPIOInput(NAVIGATOR_SW_PORT, NAVIGATOR_SW);
-    GPIOPadConfigSet(NAVIGATOR_SW_PORT, NAVIGATOR_SW, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOIntTypeSet(NAVIGATOR_SW_PORT, NAVIGATOR_SW, GPIO_BOTH_EDGES);
-//    GPIOIntEnable(NAVIGATOR_SW_PORT, NAVIGATOR_SW);
-
-    GPIOPinTypeGPIOInput(NAVSW_PORT, NAVSW_PIN);
-//    GPIOIntRegister(NAVSW_PORT, navigator_sw_int_handler); // entry handler in keypad.c
-    GPIOPadConfigSet(NAVSW_PORT, NAVSW_PIN, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOIntTypeSet(NAVSW_PORT, NAVSW_PIN, GPIO_BOTH_EDGES);
-    GPIOIntEnable(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
+    GPIOPinTypeGPIOInput(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN);
+//    GPIOIntRegister(NAVIGATOR_SW_PORT, navigator_sw_int_handler); // entry handler in keypad.c
+    GPIOPadConfigSet(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+    GPIOIntTypeSet(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN, GPIO_BOTH_EDGES);
+    GPIOIntEnable(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN); // Enable Pin Change Interrupt
 
     SysCtlPeripheralEnable(DEBOUNCE_TIMER_PERIPH);
     SysCtlDelay(26); // wait a bit for peripherals to wake up
@@ -180,22 +172,22 @@ static void debounce_int_handler (void)
 
         nav.debounce &= ~0x01;
 
-        if(nav.select == (GPIOPinRead(NAVSW_PORT, NAVSW_PIN) == 0)) {
+        if(nav.select == (GPIOPinRead(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN) == 0)) {
             if(eventHandler)
                 eventHandler(nav.select ? WIDGET_MSG_PTR_DOWN : WIDGET_MSG_PTR_UP, nav.xPos, nav.yPos);
         }
 
-        GPIOIntClear(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
-        GPIOIntEnable(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
+        GPIOIntClear(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN); // Enable Pin Change Interrupt
+        GPIOIntEnable(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN); // Enable Pin Change Interrupt
     }
 }
 
 void navigator_sw_int_handler (void)
 {
-    if(GPIOIntStatus(NAVSW_PORT, true) & NAVSW_PIN) {
+    if(GPIOIntStatus(NAVIGATOR_SW_PORT, true) & NAVIGATOR_SW_PIN) {
 
-        nav.select = GPIOPinRead(NAVSW_PORT, NAVSW_PIN) == 0; // !debounce
-        GPIOIntDisable(NAVSW_PORT, NAVSW_PIN); // Enable Pin Change Interrupt
+        nav.select = GPIOPinRead(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN) == 0; // !debounce
+        GPIOIntDisable(NAVIGATOR_SW_PORT, NAVIGATOR_SW_PIN); // Enable Pin Change Interrupt
 
         nav.debounce |= 0x01;
 

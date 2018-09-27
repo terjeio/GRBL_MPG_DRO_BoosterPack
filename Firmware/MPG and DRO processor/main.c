@@ -60,6 +60,9 @@ void main (void)
 
     SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+
+
     initGraphics();
     setOrientation(Orientation_Horizontal);
     UILibInit();

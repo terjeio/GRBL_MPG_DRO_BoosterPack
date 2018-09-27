@@ -49,15 +49,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define _NAVIGATOR_H_
 
 #define KEYBUF_SIZE 16
-#define KEYPAD_I2CADDR 0x49
-
-#define NAVSW_PORT  GPIO_PORTC_BASE
-#define NAVSW_PIN   GPIO_PIN_7
-
-#define DEBOUNCE_TIM TIMER4
-#define DEBOUNCE_TIMER_PERIPH timerPeriph(DEBOUNCE_TIM)
-#define DEBOUNCE_TIMER_BASE timerBase(DEBOUNCE_TIM)
-#define DEBOUNCE_TIMER_INT timerINT(DEBOUNCE_TIM, A)
 
 void NavigatorInit (uint32_t xSize, uint32_t ySize);
 bool NavigatorSetPosition (uint32_t xPos, uint32_t yPos, bool callback);

@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-05 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -47,72 +47,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "canvas/sender.h"
 #include "canvas/common.h"
 
-#define COL1 160
+#define COLUMN 160
 
-static common_t *data;
 static Canvas *canvasNext = 0, *canvasCommon = NULL;
-static TextBox *field[8];
-
-static void setValue (TextBox *textbox, bool refresh)
-{
-    if(textbox->string) {
-
-        switch(textbox->format) {
-            case FormatFloat:
-                sprintf(textbox->string, "%.3f", *(float *)textbox->widget.privateData);
-                break;
-            case FormatUnsignedInteger:
-                sprintf(textbox->string, "%ld", *(uint32_t *)textbox->widget.privateData);
-                break;
-        }
-        if(refresh)
-            UILibTextBoxDisplay(textbox, textbox->string);
-    }
-}
 
 /*
  * Event handlers
  *
  */
 
-static void handlerInput (Widget *self, Event *event)
-{
-    char c, *end = NULL;
-
-    switch(event->reason) {
-
-        case EventPointerLeave:; // validate and assign value
-
-            switch(((TextBox *)self)->format) {
-
-                case FormatFloat:
-                    *(float *)self->privateData = strtof(((TextBox *)self)->string, &end);
-                    break;
-
-                case FormatUnsignedInteger:
-                    *(uint32_t *)self->privateData = strtoul(((TextBox *)self)->string, &end, 10);
-                    break;
-            }
-
-            if(!(event->claimed = end != NULL && *end != '\0'))
-                event->claimed = event->y < field[0]->widget.y;
-            break;
-
-        case EventKeyDown:;
-            c = ((keypress_t *)event->data)->key;
-            if(((keypress_t *)event->data)->caret)
-                ((keypress_t *)event->data)->caret->insert = !(c >= '0' && c <= '9');
-            event->claimed = !UILib_ValidateKeypress((TextBox *)self, c);
-            break;
-    }
-}
-
 static void handlerNext (Widget *self, Event *event)
 {
     switch(event->reason) {
 
         case EventPointerUp:
-            event->claimed = true;
             UILibWidgetDeselect(self);
             UILibCanvasDisplay(canvasNext);
             break;
@@ -123,24 +71,17 @@ static void handlerNext (Widget *self, Event *event)
     }
 }
 
-static void canvasHandler (Widget *self, Event *event)
+static void handlerCanvas (Widget *self, Event *event)
 {
     switch(event->reason) {
 
-        case EventWidgetPainted:;
-            uint_fast8_t i;
+        case EventWidgetPainted:
             setColor(White);
             drawStringAligned(font_23x16, 0, 22,  "Common parameters", Align_Center, self->width, false);
-            drawStringAligned(font_23x16, 0, 50,  "Passes:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 75,  "DOC:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 100, "Feed rate:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 125, "Spindle RPM:", Align_Right, COL1 - 5, false);
-            /*
-            drawStringAligned(font_23x16, 0, 150, "Z:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 175, "Retract X:", Align_Right, COL1 - 5, false);
-            */
-            for(i = 0; i <= 3; i++)
-                setValue(field[i], true);
+            drawStringAligned(font_23x16, 0, 50,  "Passes:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 75,  "DOC:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 100, "Feed rate:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 125, "Spindle RPM:", Align_Right, COLUMN - 5, false);
             break;
     }
 }
@@ -159,50 +100,33 @@ void CommonShowCanvas (Canvas *next, common_t *common)
 {
     if(!canvasCommon) {
 
-        uint8_t cw = getCharWidth(font_23x16, '0');
+        uint16_t cw = getCharWidth(font_23x16, '0');
+        TextBox *textbox;
+        CheckBox *chkFlood;
 
-        canvasCommon = UILibCanvasCreate(0, 0, 320, 240, canvasHandler);
+        canvasCommon = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
 
-        field[0] = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COL1, 50, cw * 3, handlerInput);
-        field[0]->format = FormatUnsignedInteger;
-
-        UILibTextBoxEnable(field[0], 3);
+        textbox = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COLUMN, 50, cw * 3, NULL);
+        UILibTextBoxBindValue(textbox, &common->passes, DataTypeUnsignedInteger, "%lu", 3);
   //      field[0]->borderColor = Red;
 
         cw *= 8;
+        textbox = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COLUMN, 75, cw, NULL);
+        UILibTextBoxBindValue(textbox, &common->doc, DataTypeFloat, "%.3f", 8);
 
-        field[1] = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COL1, 75, cw, handlerInput);
-        field[1]->format = FormatFloat;
-        UILibTextBoxEnable(field[1], 8);
+        textbox = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COLUMN, 100, cw, NULL);
+        UILibTextBoxBindValue(textbox, &common->feed_rate, DataTypeFloat, "%.3f", 8);
 
-        field[2] = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COL1, 100, cw, handlerInput);
-        field[2]->format = FormatFloat;
-        UILibTextBoxEnable(field[2], 8);
+        textbox = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COLUMN, 125, cw, NULL);
+        UILibTextBoxBindValue(textbox, &common->rpm, DataTypeFloat, "%.3f", 8);
 
-        field[3] = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COL1, 125, cw, handlerInput);
-        field[3]->format = FormatFloat;
-        UILibTextBoxEnable(field[3], 8);
-/*
-        field[4] = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COL1, 150, cw, handlerInput);
-        field[4]->format = FormatFloat;
-        UILibTextBoxEnable(field[4], 8);
+        UILibCheckBoxCreate((Widget *)canvasCommon, White, 25, 150, "Spindle CCW", &common->ccw, NULL);
+        chkFlood = UILibCheckBoxCreate((Widget *)canvasCommon, White, 25, 175, "Flood", &common->flood, NULL);
+        UILibCheckBoxCreate((Widget *)canvasCommon, White, chkFlood->widget.xMax + 10, 175, "Mist", &common->mist, NULL);
 
-        field[5] = UILibTextBoxCreate((Widget *)canvasCommon, font_23x16, White, COL1, 175, cw, handlerInput);
-        field[5]->format = FormatFloat;
-        UILibTextBoxEnable(field[5], 8);
-*/
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasCommon, 35, 210, "Next", handlerNext), 250);
     }
 
-    data = common;
-    field[0]->widget.privateData = &data->passes;
-    field[1]->widget.privateData = &data->doc;
-    field[2]->widget.privateData = &data->feed_rate;
-    field[3]->widget.privateData = &data->rpm;
-    /*
-    field[4]->widget.privateData = &thread.target_z;
-    field[5]->widget.privateData = &thread.retract_x;
-*/
     canvasNext = next;
 
     UILibCanvasDisplay(canvasCommon);

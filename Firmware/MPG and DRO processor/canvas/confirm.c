@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-05 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -46,7 +46,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "canvas/sender.h"
 #include "canvas/confirm.h"
 
-static bool exit;
 static Canvas *canvasConfirm = NULL, *canvasPrevious;
 static confirm_line_t *(*getLineCallback)(void);
 static gcode_t *(*getGCodeCallback)(bool ok, char *line);
@@ -61,8 +60,6 @@ static void handlerExecute (Widget *self, Event *event)
     switch(event->reason) {
 
         case EventPointerUp:
-            event->claimed = true;
-            exit = true;
             SenderShowCanvas(getGCodeCallback);
             break;
 
@@ -77,7 +74,6 @@ static void handlerCancel (Widget *self, Event *event)
     switch(event->reason) {
 
         case EventPointerUp:
-            event->claimed = true;
             UILibWidgetDeselect(self);
             UILibCanvasDisplay(canvasPrevious);
             break;
@@ -129,10 +125,9 @@ void MenuShowConfirm (confirm_line_t *(*getLine)(void), gcode_t *(*getGCode)(boo
         frm->bgColor = WhiteSmoke;
         frm->fgColor = Black;
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfirm, 35, 185, "Execute", handlerExecute), 250);
-        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfirm, 35, 210, "Cancel", handlerCancel), 250);
+        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfirm, 35, 210, "Back", handlerCancel), 250);
     }
 
-    exit = false;
     canvasPrevious = UILibCanvasGetCurrent();
 
     UILibCanvasDisplay(canvasConfirm);

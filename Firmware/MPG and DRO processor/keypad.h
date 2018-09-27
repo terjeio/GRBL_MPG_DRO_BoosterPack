@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-05 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -99,7 +99,7 @@ jogmode_t keypadJogModeNext (void);
 jogmode_t keypadGetJogMode (void);
 leds_t keypad_GetLedState (void);
 void setJogModeChangedCallback (void (*fn)(jogmode_t jogMode));
-void setKeyclickCallback (void (*fn)(bool keydown));
+void setKeyclickCallback (void (*fn)(bool keydown, char key), bool translate);
 void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate);
 
 #endif

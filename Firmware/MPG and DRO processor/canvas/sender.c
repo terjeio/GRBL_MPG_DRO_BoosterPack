@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-07 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -64,8 +64,7 @@ static volatile uint32_t awaitResponse;
 static uint_fast8_t rqdly;
 static Canvas *canvasSender = NULL, *canvasPrevious;
 static Button *btnCancel;
-static TextBox *txtXPos, *txtZPos, *txtPass;
-static grbl_t grbl;
+static Label *lblXPos, *lblZPos, *lblPass;
 static leds_t leds;
 static job_state_t jobState;
 static gcode_t *(*getGCode)(bool ok, char *string) = NULL;
@@ -75,17 +74,17 @@ static gcode_t *(*getGCode)(bool ok, char *string) = NULL;
  *
  */
 
-static void keypressEventHandler (bool keyDown)
+static void keypressEventHandler (bool keyDown, char key)
 {
     if(keyDown)
         keyDownEvent = keyDown;
 }
 
-static void sendGCode (bool ok, char *line)
+static void sendGCode (bool ok, grbl_data_t *grbl_data)
 {
     if(ok && jobState != JobComplete) {
 
-        gcode_t *gcode = getGCode(jobState == JobInit, line);
+        gcode_t *gcode = getGCode(jobState == JobInit, grbl_data->block);
 
         jobState = gcode->complete ? JobComplete : JobRun;
 
@@ -95,77 +94,49 @@ static void sendGCode (bool ok, char *line)
         return;
     }
 
-    if(line[0] == '<') {
+    if(grbl_data->changed.state) {
 
-        line = strtok(&line[1], "|");
+        leds.run = grbl_data->grbl.state == Run || grbl_data->grbl.state == Jog;
+        leds.hold = grbl_data->grbl.state == Hold0 || grbl_data->grbl.state == Hold1;
+        keypad_leds(leds);
 
-        if(line && grblParseState(line, &grbl)) {
+        if(jobState == JobComplete && grbl_data->grbl.state == Idle)
+            UILibCanvasDisplay(canvasPrevious);
 
-            leds.run = grbl.state == Run || grbl.state == Jog;
-            leds.hold = grbl.state == Hold0 || grbl.state == Hold1;
+//            UILibLabelDisplay(txtStatus,  grbl_data->grbl.state_text);
+
+    }
+
+    if(grbl_data->grbl.state == Run) {
+
+        if(grbl_data->changed.msg && !strncmp(grbl_data->block, "[MSG:", 5))
+            UILibLabelDisplay(lblPass, &grbl_data->block[5]);
+
+        if(grbl_data->changed.xpos) {
+            sprintf(grbl_data->block, "% 9.3f", grbl_data->position[X_AXIS]);
+            UILibLabelDisplay(lblXPos, grbl_data->block);
+        }
+
+        if(grbl_data->changed.zpos) {
+            sprintf(grbl_data->block, "% 9.3f", grbl_data->position[Z_AXIS]);
+            UILibLabelDisplay(lblZPos, grbl_data->block);
+        }
+
+        if(grbl_data->changed.leds) {
+            leds.mist = grbl_data->coolant.mist;
+            leds.flood = grbl_data->coolant.flood;
+            leds.spindle = grbl_data->spindle.on;
             keypad_leds(leds);
-
-            if(jobState == JobComplete && grbl.state == Idle)
-                UILibCanvasDisplay(canvasPrevious);
-
-//            UILibTextBoxDisplay(txtStatus, grbl.state_text);
-
         }
 
-        if(grbl.state == Run) {
-
-            line = strtok(NULL, "|");
-
-            while(line) {
-
-                if(!strncmp(line, "WPos:", 5)) {
-
-                    char *next = strchr(line + 5, ',');
-                    *next++ = '\0';
-                    UILibTextBoxDisplay(txtXPos, line + 5);
-                    next = strchr(next, ',');
-                    UILibTextBoxDisplay(txtZPos, next + 1);
-
-                } else if(!strncmp(line, "A:", 2)) {
-
-                    char c;
-
-                    line = &line[2];
-                    leds.flood = 0;
-                    leds.mist = 0;
-                    leds.spindle = 0;
-
-                    while((c = *line++)) {
-                        switch(c) {
-
-                            case 'M':
-                                leds.mist = 1;
-                                break;
-
-                            case 'F':
-                               leds.flood = 1;
-                               break;
-
-                            case 'S':
-                            case 'C':
-                               leds.spindle = 1;
-                               break;
-                        }
-                    }
-                    keypad_leds(leds);
-                }
-
-                line = strtok(NULL, "|");
-            }
-        }
-    } else if(!strncmp(line, "[MSG:", 5))
-        UILibTextBoxDisplay(txtPass, &line[5]);
+        grbl_data->changed.flags = 0;
+    }
 }
 
-static void checkGRBL (bool ok, char *line)
+static void checkGRBL (bool ok, grbl_data_t *grbl_data)
 {
     if(!(grblReady = ok))
-        UILibTextBoxDisplay(txtPass, line);
+        UILibLabelDisplay(lblPass, grbl_data->block);
 }
 
 static void handlerCancel (Widget *self, Event *event)
@@ -184,7 +155,7 @@ static void handlerCancel (Widget *self, Event *event)
     }
 }
 
-static void canvasHandler (Widget *self, Event *event)
+static void handlerCanvas (Widget *self, Event *event)
 {
     switch(event->reason) {
 
@@ -192,17 +163,17 @@ static void canvasHandler (Widget *self, Event *event)
 
             if(!rqdly--) {
                 if(awaitResponse) { // Sync protocol
-                    if(!--awaitResponse) {
+                    if(--awaitResponse) {
                         if(!grblReady)
                             grblSendSerial(""); // Send another empty string to check if ready
                     } else {
-                        UILibTextBoxClear(txtPass);
+                        UILibLabelDisplay(lblPass, "Sending...");
                         setGrblTransmitCallback(sendGCode);
-                        setKeyclickCallback(keypressEventHandler);
+                        setKeyclickCallback2(keypressEventHandler, false);
                         jobState = JobInit;
                         keyDownEvent = false;
                         leds = keypad_GetLedState();
-                        sendGCode(true, ""); // Send first block to start transmission
+                        sendGCode(true, NULL); // Send first block to start transmission
                     }
                 } else if(grblReady)
                     serialPutC('?'); // Request realtime status from grbl
@@ -215,11 +186,11 @@ static void canvasHandler (Widget *self, Event *event)
 
                 switch(keypad_get_keycode()) {
 
-                    case '!':                                   //Feed hold TODO: disable when threading? In grbl?
+                    case CMD_FEED_HOLD:                         //Feed hold TODO: disable when threading? In grbl?
                         serialPutC(CMD_FEED_HOLD);
                         break;
 
-                    case '~':                                   // Cycle start
+                    case CMD_CYCLE_START:                       // Cycle start
                         serialPutC(CMD_CYCLE_START);
                         break;
 
@@ -239,17 +210,19 @@ static void canvasHandler (Widget *self, Event *event)
             drawStringAligned(font_23x16, 0, 22, "GCode Sender", Align_Center, self->width, false);
             drawString(font_23x16, 10, XROW, "X:", false);
             drawString(font_23x16, 10, ZROW, "Z:", false);
+            UILibLabelDisplay(lblPass, "Syncing...");
             rqdly = 20;
             grblReady = false;
             awaitResponse = 5; // Try 5 times (5 x 20 x 10ms = 1 second) to see if grbl is responsive
-            grbl.state = Unknown;
             setGrblTransmitCallback(checkGRBL);
             grblSendSerial(""); // Send empty string to trigger response
             break;
 
         case EventWidgetClose:
+            UILibLabelDisplay(lblXPos, "");
+            UILibLabelDisplay(lblZPos, "");
             setGrblTransmitCallback(NULL);
-            setKeyclickCallback(NULL);
+            setKeyclickCallback(NULL, false);
             if(grblReady)
                 grblSendSerial("M2"); // End program
             break;
@@ -271,15 +244,15 @@ void SenderShowCanvas (gcode_t *(*fn)(bool ok, char *line))
     getGCode = fn;
 
     if(!canvasSender) {
-        canvasSender = UILibCanvasCreate(0, 0, 320, 240, canvasHandler);
+        canvasSender = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
 
-        txtPass = UILibTextBoxCreate((Widget *)canvasSender, font_23x16, White, 10, PASSROW, 300, NULL);
+        lblPass = UILibLabelCreate((Widget *)canvasSender, font_23x16, White, 10, PASSROW, 300, NULL);
 
-        txtXPos = UILibTextBoxCreate((Widget *)canvasSender, font_23x16, White, 40, XROW, 100, NULL);
-        txtXPos->widget.flags.alignment = Align_Right;
+        lblXPos = UILibLabelCreate((Widget *)canvasSender, font_23x16, White, 40, XROW, 100, NULL);
+        lblXPos->widget.flags.alignment = Align_Right;
 
-        txtZPos = UILibTextBoxCreate((Widget *)canvasSender, font_23x16, White, 40, ZROW, 100, NULL);
-        txtZPos->widget.flags.alignment = Align_Right;
+        lblZPos = UILibLabelCreate((Widget *)canvasSender, font_23x16, White, 40, ZROW, 100, NULL);
+        lblZPos->widget.flags.alignment = Align_Right;
 
         btnCancel = UILibButtonCreate((Widget *)canvasSender, 35, 130, "Cancel", handlerCancel);
         UILibWidgetSetWidth((Widget *)btnCancel, 250);

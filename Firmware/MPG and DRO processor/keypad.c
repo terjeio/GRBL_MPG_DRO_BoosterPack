@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-05 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -38,12 +38,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 
-#include "tiva.h"
+#include "config.h"
 #include "grbl.h"
 #include "keypad.h"
 #include "navigator.h"
@@ -90,13 +87,14 @@ static volatile bool i2cBusy = false;
 static bool xlate = false;
 static char keybuf_buf[16];
 static volatile uint32_t keybuf_head = 0, keybuf_tail = 0;
+static mpg_t mpg_prev;
 
-static void fixkey (bool keydown);
+static void fixkey (bool keydown, char key);
 static void master_interrupt_handler (void);
 static void slave_interrupt_handler (void);
 static void keyclick_int_handler (void);
 
-static void (*keyclickCallback)(bool keydown) = 0;
+static void (*keyclickCallback)(bool keydown, char key) = 0;
 static void (*keyclickCallback2)(bool keydown, char key) = 0;
 static void (*jogModeChangedCallback)(jogmode_t jogMode) = 0;
 
@@ -104,7 +102,7 @@ void master_interrupt_handler (void);
 
 static void enqueue_keycode (char c)
 {
-    if(c == 'h' && keyclickCallback != fixkey) {
+    if(c == 'h' && keyclickCallback2 != fixkey) {
         keypadJogModeNext();
         return;
     }
@@ -120,14 +118,14 @@ static void enqueue_keycode (char c)
 
     uint32_t bptr = (keybuf_head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
 
-    if(bptr != keybuf_tail) {               // If not buffer full
-        keybuf_buf[keybuf_head] = c;        // add data to buffer
-        keybuf_head = bptr;                 // and update pointer
-        i2c_m.processed = true;            //
-        if(keyclickCallback) {
-            keyclickCallback(true);         // Fire key down event
-            if(!keyDown)                    // If not still down then followed by
-                keyclickCallback(false);    // key up event
+    if(bptr != keybuf_tail) {                   // If not buffer full
+        keybuf_buf[keybuf_head] = c;            // add data to buffer
+        keybuf_head = bptr;                     // and update pointer
+        i2c_m.processed = true;                 //
+        if(keyclickCallback2) {
+            keyclickCallback2(true, c);         // Fire key down event
+            if(!keyDown)                        // If not still down then followed by
+                keyclickCallback2(false, c);    // key up event
         }
     }
 }
@@ -138,14 +136,14 @@ void setJogModeChangedCallback (void (*fn)(jogmode_t jogMode))
         jogModeChangedCallback(jogMode);
 }
 
-void setKeyclickCallback (void (*fn)(bool keydown))
+void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate)
 {
-    keyclickCallback = fn;
+    keyclickCallback2 = fn;
     setMPGCallback(0);
 }
 
 // Translate CNC assigned keycodes for UI use
-static void fixkey (bool keydown)
+static void fixkey (bool keydown, char key)
 {
     static char c = 0;
 /*
@@ -154,7 +152,7 @@ static void fixkey (bool keydown)
     if(keydown) {
 
         if(keywasdown && != c)
-            keyclickCallback2(false, c);
+            keyclickCallback(false, c);
 
         c = keypad_get_keycode();
     }
@@ -191,24 +189,37 @@ static void fixkey (bool keydown)
             c = 0x08; // BS
             break;
 
+        case 'm':
+            c = 128;
+            break;
+
+        case 'a':
+            c = 129;
+            break;
+
         case 'o':
             c = '-';
             break;
     }
 
-    keyclickCallback2(keydown, c);
+    if(c) {
+        keyclickCallback(keydown, c);
+        if(!keydown)
+            c = 0;
+    }
 }
 
+// Handle MPG events for data entry
 void mpg_handler (mpg_t mpg)
 {
-    static int32_t pos = 0;
     static char c = '0' - 1;
 
     int32_t chg = 0;
 
-    if((mpg.z.position & ~0x03) - pos >= 4)
+    // Single number increment/decrement for Z-axis MPG
+    if((mpg.z.position & ~0x03) - mpg_prev.z.position >= 4)
         chg = 1;
-    else if((mpg.z.position & ~0x03) - pos <= -4)
+    else if((mpg.z.position & ~0x03) - mpg_prev.z.position <= -4)
         chg = -1;
 
     if(chg) {
@@ -220,19 +231,34 @@ void mpg_handler (mpg_t mpg)
         else if(c > '9')
             c = '0';
 
-        pos = mpg.z.position & ~0x03;
+        mpg_prev.z.position = mpg.z.position & ~0x03;
+        keyclickCallback(true, c);
+    }
 
-        keyclickCallback2(true, c);
+    // Value spin for X-axis spin
+    if((mpg.x.position & ~0x03) - mpg_prev.x.position >= 4)
+        chg = 1;
+    else if((mpg.x.position & ~0x03) - mpg_prev.x.position <= -4)
+        chg = -1;
+    else
+        chg = 0;
+
+    if(chg) {
+        mpg_prev.x.position = mpg.x.position & ~0x03;
+        keyclickCallback(true, chg > 0 ? 129 : 128);
     }
 }
 
-void setKeyclickCallback2 (void (*fn)(bool keydown, char key), bool translate)
+void setKeyclickCallback (void (*fn)(bool keydown, char key), bool translate)
 {
     xlate = translate;
-    keyclickCallback2 = fn;
-    keyclickCallback = fixkey;
-    if(translate)
+    keyclickCallback = fn;
+    keyclickCallback2 = fixkey;
+    if(translate) {
         setMPGCallback(mpg_handler);
+        mpg_t *mpg = MPG_GetPosition();
+        memcpy(&mpg_prev, mpg, sizeof(mpg_t));
+    }
 }
 
 void keypad_setup (void)
@@ -295,7 +321,7 @@ static void I2CGetSWKeycode (void)
 {
    if(!i2cIsBusy) { // ignore if busy
        i2c_m.processed = false;
-       i2c_m.getKeycode = keyclickCallback != NULL;
+       i2c_m.getKeycode = keyclickCallback2 != NULL;
        i2c_m.data  = i2c_m.buffer;
        i2c_m.count = 1;
        i2c_m.state = I2CState_ReceiveLast;
@@ -472,8 +498,8 @@ static void keyclick_int_handler (void)
             if(i2c_s.claimed) {
                 i2c_s.claimed = false;
                 GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0);
-            } else if(keyclickCallback)
-                keyclickCallback(false); // fire key up event
+            } else if(keyclickCallback2)
+                keyclickCallback2(false, 0); // fire key up event
             keyDown = false;
         }
 	} else

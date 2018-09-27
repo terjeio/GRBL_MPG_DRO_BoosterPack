@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -45,11 +45,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "grbl.h"
 #include "serial.h"
+#include "lcd/colorRGB.h"
 
 #define NUMSTATES 13
 
-typedef enum
-{
+#define X_AXIS 0
+#define Y_AXIS 1
+#define Z_AXIS 2
+
+typedef enum {
     Unknown = 0,
     Idle,
     Run,
@@ -67,11 +71,63 @@ typedef enum
 
 typedef struct {
     grbl_state_t state;
+    RGBColor_t state_color;
     char state_text[8];
 } grbl_t;
 
-void setGrblReceiveCallback (void (*fn)(char *line));
-void setGrblTransmitCallback (void (*fn)(bool ok, char *line));
+typedef struct {
+    float x;
+    float y;
+    float z;
+} coord_values_t;
+
+typedef struct {
+    float rpm_programmed;
+    float rpm_actual;
+    bool on;
+    bool ccw;
+} spindle_data_t;
+
+typedef struct {
+    bool flood;
+    bool mist;
+} coolant_data_t;
+
+typedef union {
+    uint16_t flags;
+    struct {
+        uint16_t mpg :1,
+                 state :1,
+                 xpos :1,
+                 ypos :1,
+                 zpos :1,
+                 offset :1,
+                 leds :1,
+                 dist : 1,
+                 msg: 1,
+                 feed: 1,
+                 rpm: 1;
+    };
+} changes_t;
+
+typedef struct {
+    grbl_t grbl;
+    float position[3];
+    float offset[3];
+    spindle_data_t spindle;
+    coolant_data_t coolant;
+    float feed_rate;
+    bool useWPos;
+    bool awaitWCO;
+    bool absDistance;
+    bool mpgMode;
+    changes_t changed;
+    char pins[10];
+    char block[255];
+} grbl_data_t;
+
+grbl_data_t *setGrblReceiveCallback (void (*fn)(char *line));
+void setGrblTransmitCallback (void (*fn)(bool ok, grbl_data_t *grbl_data));
 void grblPollSerial (void);
 void grblSerialFlush (void);
 void grblSendSerial (char *line);

@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-07 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -52,10 +52,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define font_freepixel_9x17 (Font*)freepixel_9x17_data
 extern const uint8_t freepixel_9x17_data[];
 
-#define COL1 120
+#define COLUMN 120
 
 typedef struct {
     common_t common;
+    float pitch;
     float start_x;
     float start_z;
     float target_z;
@@ -64,39 +65,22 @@ typedef struct {
 } roughing_t;
 
 static roughing_t thread = {
-   .start_x = -1.0f,
+   .pitch = 1.0,
+   .start_x = 0.0f,
    .start_z = 0.0f,
-   .target_z = -9.999f,
+   .target_z = -1.0f,
    .retract_x = 1.0f,
    .target_x = -1.0f,
    .common.feed_rate = 100.0f,
    .common.doc = 0.5f,
-   .common.rpm = 200.0f,
-   .common.passes = 4
+   .common.rpm = 300.0f,
+   .common.passes = 1
 };
 
 static gcode_t gcode;
 static roughing_t exec_thread;
-static uint_fast16_t state;
-static Canvas *canvasConfig = 0, *canvasPrevious;
-static TextBox *field[8];
-
-static void setValue (TextBox *textbox, bool refresh)
-{
-    if(textbox->string) {
-
-        switch(textbox->format) {
-            case FormatFloat:
-                sprintf(textbox->string, "%.3f", *(float *)textbox->widget.privateData);
-                break;
-            case FormatUnsignedInteger:
-                sprintf(textbox->string, "%ld", *(uint32_t *)textbox->widget.privateData);
-                break;
-        }
-        if(refresh)
-            UILibTextBoxDisplay(textbox, textbox->string);
-    }
-}
+static uint_fast16_t state, substate;
+static Canvas *canvasThreading = 0, *canvasPrevious;
 
 /*
  * Event handlers
@@ -120,7 +104,7 @@ static confirm_line_t *getLine (void)
     switch(line->counter++) {
 
         case 0:
-            strcpy(line->string, " Threading ");
+            strcpy(line->string, " Threading (G33) ");
             break;
 
         case 1:
@@ -166,11 +150,11 @@ static gcode_t *getGCode (bool init, char *line)
     static bool msg = true;
 
     if(init) {
-        state = 0;
+        state = substate = 0;
         memcpy(&exec_thread, &thread, sizeof(roughing_t));
      //   exec_thread.doc = (exec_thread.start_x - exec_thread.target_x) / (float)exec_thread.passes;
-        gcode.pass = 0;
-        gcode.passes = thread.common.passes;
+        gcode.pass     = 0;
+        gcode.passes   = thread.common.passes;
         gcode.complete = false;
     }
 
@@ -181,41 +165,66 @@ static gcode_t *getGCode (bool init, char *line)
 
     if(msg && state == 0) {
         if(++gcode.pass <= gcode.passes)
-            sprintf(buffer, "(MSG,Pass %ld of %ld)", gcode.pass, gcode.passes);
+            sprintf(buffer, "(MSG,Pass %lu of %lu)", gcode.pass, gcode.passes);
         msg = false;
     } else
 
     switch(state) {
 
-        case 0: // go to X retract position
+        case 0: // initialize
+            switch(substate) {
+
+                case 0:
+                    sprintf(buffer, "M%uS%.1f", exec_thread.common.ccw ? 4U : 5U, exec_thread.common.feed_rate);
+                    if(!exec_thread.common.flood)
+                        substate++;
+                    if(!exec_thread.common.mist)
+                        substate++;
+                    break;
+//G4P delay here? From config?
+                case 1:
+                    strcat(buffer, "M8");
+                    if(!exec_thread.common.mist)
+                        substate++;
+                    break;
+
+                case 2:
+                    strcat(buffer, "M7");
+                    break;
+            }
+            if(++substate == 3)
+                state = 1;
+            break;
+
+        case 1: // go to X retract position
             sprintf(buffer, "G0X%.3f", exec_thread.retract_x);
-            state = exec_thread.common.passes ? 1 : 4;
+            state++;
             break;
 
-        case 1: // go to Z start position
+        case 2: // go to Z start position
             sprintf(buffer, "G0Z%.3f", exec_thread.start_z);
-            state = 2;
+            state = exec_thread.common.passes ? 3 : 5;
             break;
 
-        case 2: // go to X start position
+        case 3: // go to X start position
             sprintf(buffer, "G0X%.3f", exec_thread.start_x);
-            state = 3;
+            state++;
             break;
 
-        case 3: // execute cut
+        case 4: // execute cut
             exec_thread.common.passes--;
-            if(exec_thread.target_x)
+            if(exec_thread.target_x == exec_thread.start_x)
                 sprintf(buffer, "G1Z%.3fF%f", exec_thread.target_z, exec_thread.common.feed_rate);
             else
                 sprintf(buffer, "G1X%.3fZ%.3fF%f", exec_thread.target_x, exec_thread.target_z, exec_thread.common.feed_rate);
             exec_thread.start_x -= exec_thread.common.doc;
             if(exec_thread.target_x)
                 exec_thread.target_x -= exec_thread.common.doc;
-            state = 0;
+            state = 1; // Loop
             msg = true;
             break;
 
-        case 4: // complete
+        case 5: // complete
             msg = true;
             gcode.complete = true;
             break;
@@ -226,48 +235,13 @@ static gcode_t *getGCode (bool init, char *line)
     return &gcode;
 }
 
-static void handlerInput (Widget *self, Event *event)
-{
-    char c, *end = NULL;
-
-    switch(event->reason) {
-
-        case EventPointerLeave:; // validate and assign value
-
-            switch(((TextBox *)self)->format) {
-
-                case FormatFloat:
-                    *(float *)self->privateData = strtof(((TextBox *)self)->string, &end);
-                    break;
-
-                case FormatUnsignedInteger:
-                    *(uint32_t *)self->privateData = strtoul(((TextBox *)self)->string, &end, 10);
-                    break;
-            }
-
-            if(!(event->claimed = end != NULL && *end != '\0'))
-                event->claimed = event->y < field[0]->widget.y;
-            break;
-
-        case EventKeyDown:;
-            c = ((keypress_t *)event->data)->key;
-            if(((keypress_t *)event->data)->caret)
-                ((keypress_t *)event->data)->caret->insert = !(c >= '0' && c <= '9');
-            event->claimed = !UILib_ValidateKeypress((TextBox *)self, c);
-            break;
-    }
-}
-
 static void handlerPrev (Widget *self, Event *event)
 {
     switch(event->reason) {
 
         case EventPointerUp:
             UILibWidgetDeselect(self);
-            CommonShowCanvas(canvasConfig, &thread.common);
-            break;
-
-        case EventPointerLeave:
+            CommonShowCanvas(canvasThreading, &thread.common);
             break;
     }
 }
@@ -299,22 +273,19 @@ static void handlerExit (Widget *self, Event *event)
     }
 }
 
-static void canvasHandler (Widget *self, Event *event)
+static void handlerCanvas (Widget *self, Event *event)
 {
     switch(event->reason) {
 
-        case EventWidgetPainted:;
-            uint_fast8_t i;
+        case EventWidgetPainted:
             setColor(White);
-            drawStringAligned(font_23x16, 0, 22,  "Threading", Align_Center, self->width, false);
-            drawStringAligned(font_23x16, 0, 50,  "Passes:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 75,  "Start X:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 100, "Z:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 125, "Target X:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 150, "Z:", Align_Right, COL1 - 5, false);
-            drawStringAligned(font_23x16, 0, 175, "Retract X:", Align_Right, COL1 - 5, false);
-            for(i = 0; i <= 5; i++)
-                setValue(field[i], true);
+            drawStringAligned(font_23x16, 0, 22,  "Threading (G33)", Align_Center, self->width, false);
+            drawStringAligned(font_23x16, 0, 50,  "Pitch:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 75,  "Start X:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 100, "Z:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 125, "Target X:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 150, "Z:", Align_Right, COLUMN - 5, false);
+            drawStringAligned(font_23x16, 0, 175, "Retract X:", Align_Right, COLUMN - 5, false);
             break;
     }
 }
@@ -331,53 +302,32 @@ static void canvasHandler (Widget *self, Event *event)
 
 void ThreadingShowCanvas (void)
 {
-    static Button *btn;
+    if(!canvasThreading) {
 
-    if(!canvasConfig) {
+        uint16_t cw = getCharWidth(font_23x16, '0') * 8, row = 50, i;
+        Button *btn;
+        TextBox *field[6];
 
-        uint8_t cw = getCharWidth(font_23x16, '0');
+        canvasThreading = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
 
-        canvasConfig = UILibCanvasCreate(0, 0, 320, 240, canvasHandler);
+        for(i = 0; i < 6; i++) {
+            field[i] = UILibTextBoxCreate((Widget *)canvasThreading, font_23x16, White, COLUMN, row, cw, NULL);
+            row += 25;
+        }
 
-        field[0] = UILibTextBoxCreate((Widget *)canvasConfig, font_23x16, White, COL1, 50, cw * 3, handlerInput);
-        field[0]->format = FormatUnsignedInteger;
-        field[0]->widget.privateData = &thread.common.passes;
-        UILibTextBoxEnable(field[0], 3);
-//        field[0]->borderColor = Red;
+        UILibTextBoxBindValue(field[0], &thread.pitch, DataTypeFloat, "%.3f", 8);
+        UILibTextBoxBindValue(field[1], &thread.start_x, DataTypeFloat, "%.3f", 8);
+        UILibTextBoxBindValue(field[2], &thread.start_z, DataTypeFloat, "%.3f", 8);
+        UILibTextBoxBindValue(field[3], &thread.target_x, DataTypeFloat, "%.3f", 8);
+        UILibTextBoxBindValue(field[4], &thread.target_z, DataTypeFloat, "%.3f", 8);
+        UILibTextBoxBindValue(field[5], &thread.retract_x, DataTypeFloat, "%.3f", 8);
 
-        cw *= 8;
-
-        field[1] = UILibTextBoxCreate((Widget *)canvasConfig, font_23x16, White, COL1, 75, cw, handlerInput);
-        field[1]->widget.privateData = &thread.start_x;
-        field[1]->format = FormatFloat;
-        UILibTextBoxEnable(field[1], 8);
-
-        field[2] = UILibTextBoxCreate((Widget *)canvasConfig, font_23x16, White, COL1, 100, cw, handlerInput);
-        field[2]->widget.privateData = &thread.start_z;
-        field[2]->format = FormatFloat;
-        UILibTextBoxEnable(field[2], 8);
-
-        field[3] = UILibTextBoxCreate((Widget *)canvasConfig, font_23x16, White, COL1, 125, cw, handlerInput);
-        field[3]->widget.privateData = &thread.target_x;
-        field[3]->format = FormatFloat;
-        UILibTextBoxEnable(field[3], 8);
-
-        field[4] = UILibTextBoxCreate((Widget *)canvasConfig, font_23x16, White, COL1, 150, cw, handlerInput);
-        field[4]->widget.privateData = &thread.target_z;
-        field[4]->format = FormatFloat;
-        UILibTextBoxEnable(field[4], 8);
-
-        field[5] = UILibTextBoxCreate((Widget *)canvasConfig, font_23x16, White, COL1, 175, cw, handlerInput);
-        field[5]->widget.privateData = &thread.retract_x;
-        field[5]->format = FormatFloat;
-        UILibTextBoxEnable(field[5], 8);
-
-        btn = UILibButtonCreate((Widget *)canvasConfig, 27, 210, "Next", handlerNext);
-        btn = UILibButtonCreate((Widget *)canvasConfig, btn->widget.xMax + 10, 210, "Back", handlerPrev);
-        UILibButtonCreate((Widget *)canvasConfig, btn->widget.xMax + 10, 210, "Exit", handlerExit);
+        btn = UILibButtonCreate((Widget *)canvasThreading, 27, 210, "Next", handlerNext);
+        btn = UILibButtonCreate((Widget *)canvasThreading, btn->widget.xMax + 10, 210, "Back", handlerPrev);
+        UILibButtonCreate((Widget *)canvasThreading, btn->widget.xMax + 10, 210, "Exit", handlerExit);
     }
 
     canvasPrevious = UILibCanvasGetCurrent();
 
-    CommonShowCanvas(canvasConfig, &thread.common);
+    CommonShowCanvas(canvasThreading, &thread.common);
 }

@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-07 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
  */
 
 /*
@@ -44,7 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "uilib/uilib.h"
 
 static Canvas *canvasUtils = 0, *canvasPrevious;
-static TextBox *txtResponse = NULL;
+static Label *lblResponse = NULL;
 
 /*
  * Event handlers
@@ -79,7 +79,6 @@ static void handlerExit (Widget *self, Event *event)
     switch(event->reason) {
 
         case EventPointerUp:
-            event->claimed = true;
             UILibCanvasDisplay(canvasPrevious);
             break;
 
@@ -96,7 +95,7 @@ static void handlerExit (Widget *self, Event *event)
 
 static void showResponse (char *line)
 {
-    UILibTextBoxDisplay(txtResponse, strncmp(line, "[MSG:", 5) ? line : &line[5]);
+    UILibLabelDisplay(lblResponse, strncmp(line, "[MSG:", 5) ? line : &line[5]);
 }
 
 /*
@@ -113,7 +112,7 @@ void GRBLUtilsShowCanvas (void)
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 40, "Exit", handlerExit), 250);
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 65, "Reset", handlerReset), 250);
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 90, "Unlock", handlerUnlock), 250);
-        txtResponse = UILibTextBoxCreate((Widget *)canvasUtils, font_23x16, White, 0, 239, 320, NULL);
+        lblResponse = UILibLabelCreate((Widget *)canvasUtils, font_23x16, White, 0, 239, 320, NULL);
     }
 
     canvasPrevious = UILibCanvasGetCurrent();
