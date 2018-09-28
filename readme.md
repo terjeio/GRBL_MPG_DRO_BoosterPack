@@ -14,10 +14,33 @@ Features:
 
 Parts of alpha-version of supporting code is now available, not complete as there are dependencies to several libraries that need to be published separately. The code is written so it is should be easy to port, all processor dependent code is in separate files. 
 
-All core funtionality is now up and running, GUI is 100% event driven making it easy to extend with new dialogs. Shared dialogs (canvases) created for common data (such as DOC, feed rate, RPM), input review/confirmation and GCode transfer to grbl. I am considering moving grbl data parsing to single code unit for standardisation, (partial) parsing is now done in a few places.
+All core funtionality is now up and running, GUI is 100% event driven making it easy to extend with new dialogs. Shared dialogs (canvases) created for common data (such as DOC, feed rate, RPM), input review/confirmation and GCode transfer to grbl.
+
+
+### How it works:
+
+The setup comprises 3 mirocontrollers: one running Grbl, one handling the keyboard scanning and one (the MPG processor) for the DRO and MPG \(user interface\).
+
+#### Grbl microcontroller:
+
+Support for a second input stream and a switch for changing to/from MPG mode has to be added to the code. In \"normal\" mode the MPG processor listen to the output stream from Grbl, parses the data and displays relevant info on the display. In \"MPG\" mode Grbl switches its serial input to the second input stream and the MPG prosessor takes over control by acting as a GCode sender. To tell the MPG processor about a mode change the real time report from Grbl is extended with |MPG:0 \(\"normal\"\) and |MPG:1 \(\"MPG\"\), this is only added when the mode change takes place. Some of [my HAL drivers](https://github.com/terjeio/grblHAL/tree/master/drivers) supports this functionality as does my [patched version of grbl-Mega](https://github.com/terjeio/grbl-Mega).
+ 
+#### MPG microcontroller:
+
+This handles the user interface \(keypresses, MPG input, menu navigator input and DRO display\). In \"normal\" mode it passively listen to the output stream coming from Grbl, parses it and updates the display and LED statuses accordingly. For this to work correctly there has to be a PC based GCode sender connected to Grbl, such as [Grbl-Panel](https://github.com/gerritv/Grbl-Panel), that constantly request the real time status report.
+
+In \"MPG\" mode it takes over control and acts as a GCode sender itself, ideally the PC based GCode sender should then disable its GUI. When turning the MPG wheels G1 commands are issued with a feed rate that is dependent on the turning speed, simulating the action of the handwheels on the lathe. The jog buttons issues jog commands and most of the other buttons issues real-time commands such as Hold or Cycle start. It is also possible to hardwire some of the button states to the corresponding Grbl input signals.
+
+For the lathe version I am currently working on I am adding canvases \(or dialogs\) that will be used for some simple tasks such as reducing the diameter of the stock, and possibly threading if the Grbl version supports that. There is a common canvas for streaming task data, this may be used to stream data from a SD card \(not yet implemented\). 
+
+#### Keyboard handling microcontroller:
+
+Due to limited IO on the MPG microcontroller a separate processor is employed for handling the keyboard and LEDs. Up to 25 keys can be added (in a matrix) and 8 LEDs are supported. Keypresses are sent to the MPG controller via I2C, and there is a strobe signal for telling MPG controller that a key is pressed. The strobe signal suppports different key modes such as single shot, autorepeat and continuous - configurable per key.
+
+---
 
 ![Testbench setup](media/IMG_8515.jpg)
-
+ 
 #### LaunchPad pin assignments:
 
 ``` plain
