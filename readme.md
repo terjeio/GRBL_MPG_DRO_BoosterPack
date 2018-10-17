@@ -12,14 +12,16 @@ Features:
 * I2C port (3V3)
 * On board MSP430G2553 handling keys and LEDs, internal I2C interface to Tiva C
 
-Parts of alpha-version of supporting code is now available, not complete as there are dependencies to several libraries that need to be published separately. The code is written so it is should be easy to port, all processor dependent code is in separate files. 
+Parts of alpha-version of supporting code is now available.
+An initial commit of the [display driver](https://github.com/terjeio/Display-libraries/) used has been now been made public.
+The code is written so it is should be easy to port, all processor dependent code is in separate files. 
 
 All core funtionality is now up and running, GUI is 100% event driven making it easy to extend with new dialogs. Shared dialogs (canvases) created for common data (such as DOC, feed rate, RPM), input review/confirmation and GCode transfer to grbl.
 
 
 ### How it works:
 
-The setup comprises 3 mirocontrollers: one running Grbl, one handling the keyboard scanning and one (the MPG processor) for the DRO and MPG \(user interface\).
+The setup comprises 3 microcontrollers: one running Grbl, one handling the keyboard scanning and one (the MPG processor) for the DRO and MPG \(user interface\).
 
 #### Grbl microcontroller:
 
