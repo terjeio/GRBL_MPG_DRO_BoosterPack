@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-09-04 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-12-06 / ©Io Engineering / Terje
  */
 
 /*
@@ -50,7 +50,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SERIAL_NO_DATA -1
 #define NUMSTATES 13
 
-// This array must match the grbl_state_t enum above!
+// This array must match the grbl_state_t enum in grblcomm.h!
 const char *const grblState[NUMSTATES] = {
     "Unknown",
     "Idle",
@@ -67,7 +67,7 @@ const char *const grblState[NUMSTATES] = {
     "Tool"
 };
 
-// This array must match the grbl_state_t enum above!
+// This array must match the grbl_state_t in grblcomm.h!
 const RGBColor_t grblStateColor[NUMSTATES] = {
     Black,
     White,
@@ -208,13 +208,13 @@ static void parseFeedSpeed (char *data)
         grbl_data.changed.feed = true;
 
     data = next;
-    next = strchr(data, ',');
-    *next++ = '\0';
+    if((next = strchr(data, ',')))
+        *next++ = '\0';
 
     if(parseDecimal(&grbl_data.spindle.rpm_programmed, data))
         grbl_data.changed.rpm = true;
 
-    if(parseDecimal(&grbl_data.spindle.rpm_actual, next))
+    if(next && parseDecimal(&grbl_data.spindle.rpm_actual, next))
         grbl_data.changed.rpm = true;
 }
 
@@ -402,7 +402,7 @@ void grblSendSerial (char *line)
 bool grblParseState (char *data, grbl_t *grbl)
 {
     bool changed = false;
-    uint_fast8_t len = strlen(data);;
+    uint_fast8_t len = strlen(data);
 
     if(len < sizeof(grbl->state_text) && strncmp(grbl->state_text, data, len)) {
         uint_fast8_t state = 0;

@@ -148,7 +148,7 @@ int16_t serialGetC (void)
     uint16_t bptr = rx_tail;
 
     if(bptr == rx_head)
-        return -1; // no data available else EOF
+        return EOF; // no data available else EOF
 
 //    UARTIntDisable(UARTCH, UART_INT_RX|UART_INT_RT);
     data = rxbuf[bptr++];                   // Get next character, increment tmp pointer
@@ -184,7 +184,7 @@ void serialRxFlush (void)
 
 void serialRxCancel (void)
 {
-    rxbuf[rx_head] = CAN;
+    rxbuf[rx_head] = ASCII_CAN;
     rx_tail = rx_head;
     rx_head = (rx_tail + 1) & (RX_BUFFER_SIZE - 1);
 #ifdef RTS_PORT
@@ -224,7 +224,7 @@ void serialWriteS (const char *data)
 void serialWriteLn (const char *data)
 {
     serialWriteS(data);
-    serialWriteS(EOL);
+    serialWriteS(ASCII_EOL);
 }
 
 void serialWrite (const char *data, unsigned int length)
@@ -245,15 +245,15 @@ char *serialReadLn (void) {
     int32_t c = 0;
     uint32_t count = 0;
 
-    while(c != CR) {
+    while(c != ASCII_CR) {
         if((c = serialGetC()) != -1) {
 
             if(c == CR)
                 cmdbuf[count] = '\0';
             else if(c > 31 && count < sizeof(cmdbuf))
                 cmdbuf[count++] = (char)c;
-            else if(c == EOF)
-                c = CR;
+            else if(c == ASCII_EOF)
+                c = ASCII_CR;
             else if(c == DEL && count > 0)
                 count--;
         }

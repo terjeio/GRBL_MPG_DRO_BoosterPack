@@ -28,6 +28,9 @@
 // g-code programs, maybe selected for interface programs.
 // NOTE: If changed, manually update help message in report.c.
 
+#ifndef __grbl_h__
+#define __grbl_h__
+
 #define CMD_EXIT 0x03 // ctrl-C
 #define CMD_RESET 0x18 // ctrl-X
 #define CMD_STOP 0x19 // ctrl-Y
@@ -61,3 +64,73 @@
 #define CMD_SPINDLE_OVR_STOP 0x9E
 #define CMD_COOLANT_FLOOD_OVR_TOGGLE 0xA0
 #define CMD_COOLANT_MIST_OVR_TOGGLE 0xA1
+
+typedef enum {
+    Setting_PulseMicroseconds = 0,
+    Setting_StepperIdleLockTime = 1,
+    Setting_StepInvertMask = 2,
+    Setting_DirInvertMask = 3,
+    Setting_InvertStepperEnable = 4,
+    Setting_LimitPinsInvertMask = 5,
+    Setting_InvertProbePin = 6,
+    Setting_StatusReportMask = 10,
+    Setting_JunctionDeviation = 11,
+    Setting_ArcTolerance = 12,
+    Setting_ReportInches = 13,
+    Setting_ControlInvertMask = 14,
+    Setting_CoolantInvertMask = 15,
+    Setting_SpindleInvertMask = 16,
+    Setting_ControlPullUpDisableMask = 17,
+    Setting_LimitPullUpDisableMask = 18,
+    Setting_ProbePullUpDisable = 19,
+    Setting_SoftLimitsEnable = 20,
+    Setting_HardLimitsEnable = 21,
+    Setting_HomingEnable = 22,
+    Setting_HomingDirMask = 23,
+    Setting_HomingFeedRate = 24,
+    Setting_HomingSeekRate = 25,
+    Setting_HomingDebounceDelay = 26,
+    Setting_HomingPulloff = 27,
+    Setting_G73Retract = 28,
+    Setting_PulseDelayMicroseconds = 29,
+    Setting_RpmMax = 30,
+    Setting_RpmMin = 31,
+    Setting_LaserMode = 32,
+    Setting_PWMFreq = 33,
+    Setting_PWMOffValue = 34,
+    Setting_PWMMinValue = 35,
+    Setting_PWMMaxValue = 36,
+    Setting_StepperDeenergizeMask = 37,
+    Setting_GRBLMaxValue = 37, // NOTE: Always set to highest non-axis setting parameter
+    Setting_SpindlePPR  = 38,
+    Setting_SpindlePGain  = 39,
+    Setting_SpindleIGain  = 40,
+    Setting_SpindleDGain  = 41,
+    Setting_HomingLocateCycles = 43,
+    Setting_HomingCycle_1  = 44,
+    Setting_HomingCycle_2  = 45,
+    Setting_HomingCycle_3  = 46,
+    Setting_HomingCycle_4  = 47,
+    Setting_HomingCycle_5  = 48,
+    Setting_HomingCycle_6  = 49,
+// Optional driver implemented settings for jogging
+    Setting_JogStepSpeed = 50,
+    Setting_JogSlowSpeed = 51,
+    Setting_JogFastSpeed = 52,
+    Setting_JogStepDistance = 53,
+    Setting_JogSlowDistance = 54,
+    Setting_JogFastDistance = 55,
+//
+    Setting_RestoreOverrides = 60,
+    Setting_IgnoreDoorWhenIdle = 61,
+    Setting_SleepEnable = 62,
+    Setting_DisableLaserDuringHold = 63,
+    Setting_ForceInitAlarm = 64,
+    Setting_CheckLimitsAtInit = 65,
+    Setting_HomingInitLock = 66,
+    Settings_Stream = 70,
+    Setting_AxisSettingsBase = 100, // NOTE: Reserving settings values >= 100 for axis settings. Up to 255.
+    Setting_AxisSettingsMax = 255
+} setting_type_t;
+
+#endif

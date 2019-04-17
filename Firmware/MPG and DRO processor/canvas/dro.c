@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v1.0.5 / 2018-07-15 / ©Io Engineering / Terje
+ * v1.0.6 / 2019-04-16 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2019, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -107,6 +107,8 @@ typedef struct {
 typedef struct {
     uint_fast16_t rpm;
     uint_fast16_t mpg_rpm;
+    uint_fast16_t rpm_min;
+    uint_fast16_t rpm_max;
 } spindle_state_t;
 
 //
@@ -122,6 +124,7 @@ volatile uint_fast8_t event = 0;
 static bool mpgMove = false, endMove = false;
 static bool msg = false, jogging = false, keyreleased = true, disableMPG = false, mpgReset = false, settingsOK = false, active = false;
 static float angle = 0.0f;
+static uint32_t nav_midpos = 0;
 static axis_data_t axis[3];
 static jogmode_t jogMode = JogMode_Slow;
 static event_counters_t event_count;
@@ -152,7 +155,9 @@ static leds_t leds = {
 
 static spindle_state_t spindle_state = {
     .rpm     = 0,
-    .mpg_rpm = 200
+    .mpg_rpm = 0,
+    .rpm_min = 0,
+    .rpm_max = 1000
 };
 
 static void displayGrblData (char *line);
@@ -359,8 +364,12 @@ static void processKeypress (void)
 */
         case 'S':                                   // Spindle
             if(grbl_data->mpgMode && grbl_data->grbl.state == Idle) {
-                bool spindle_on = !grbl_data->spindle.on && spindle_state.mpg_rpm > 0;
-                grbl_data->spindle.ccw = signalSpindleDir();
+                bool spindle_on = !grbl_data->spindle.on;
+                if(spindle_on) {
+                    grbl_data->spindle.ccw = signalSpindleDir();
+                    if(spindle_state.mpg_rpm == 0)
+                        spindle_state.mpg_rpm = 400;
+                }
                 strcpy(command, spindle_on ? (grbl_data->spindle.ccw ? "M4" : "M3") : "M5");
                 if(spindle_on)
                     sprintf(append(command), "S%d", spindle_state.mpg_rpm);
@@ -573,30 +582,41 @@ void parseSettings (char *line)
         line = strtok(NULL, "=");
         value = atof(line);
 
-        switch(setting) {
+        switch((setting_type_t)setting) {
 
-            case 50:
+            case Setting_JogStepSpeed:
                 jog_config.step_speed = value;
                 break;
 
-            case 51:
+            case Setting_JogSlowSpeed:
                 jog_config.slow_speed = value;
                 break;
 
-            case 52:
+            case Setting_JogFastSpeed:
                 jog_config.fast_speed = value;
                 break;
 
-            case 53:
+            case Setting_JogStepDistance:
                 jog_config.step_distance = value;
                 break;
 
-            case 54:
+            case Setting_JogSlowDistance:
                 jog_config.slow_distance = value;
                 break;
 
-            case 55:
+            case Setting_JogFastDistance:
                 jog_config.fast_distance = value;
+                break;
+
+            case Setting_RpmMin:
+                spindle_state.rpm_min = value;
+                break;
+
+            case Setting_RpmMax:
+                spindle_state.rpm_max = value;
+                break;
+
+            default:
                 break;
         }
     }
@@ -692,6 +712,8 @@ static void displayGrblData (char *line)
         }
 
         if(grbl_data->changed.rpm) {
+            if(grbl_data->spindle.rpm_programmed > 0.0f)
+                spindle_state.mpg_rpm = (uint32_t)grbl_data->spindle.rpm_programmed;
             sprintf(line, "%6.1f", grbl_data->spindle.rpm_actual);
             setColor(grbl_data->spindle.rpm_actual > 2000.0f ? Coral : White); // TODO: add config for RPM warning
             drawString(font_freepixel_17x34, 60, RPMROW, line, true);
@@ -806,9 +828,23 @@ static void canvasHandler (Widget *self, Event *uievent)
             break;
 
         case EventPointerChanged:
-            uievent->claimed = true;
-            grbl_data->spindle.rpm_programmed = NavigatorGetYPosition() * 3;
-            // TODO: issue spindle override command(s)
+            {
+                uievent->claimed = true;
+                // TODO: issue spindle override command(s) when not idle?
+                int32_t rpm = NavigatorGetYPosition() - nav_midpos;
+                if(abs(rpm) < 10 && grbl_data->mpgMode && grbl_data->grbl.state == Idle) {
+                    char command[10];
+                    rpm = (int32_t)spindle_state.mpg_rpm + rpm * 8;
+                    if(rpm < 0 || rpm < spindle_state.rpm_min)
+                        rpm = spindle_state.rpm_min;
+                    else if (rpm > spindle_state.rpm_max)
+                        rpm = spindle_state.rpm_max;
+                    spindle_state.mpg_rpm = (uint32_t)rpm;
+                    sprintf(command, "S%d", spindle_state.mpg_rpm);
+                    serialWriteLn((char *)command);
+                }
+                NavigatorSetPosition(0, nav_midpos, false);
+            }
             break;
 
         case EventWidgetPainted:
@@ -837,7 +873,7 @@ static void canvasHandler (Widget *self, Event *uievent)
             keypad_forward(!grbl_data->mpgMode);
             setKeyclickCallback2(keyEvent, false);
             grbl_data = setGrblReceiveCallback(displayGrblData);
-            NavigatorSetPosition(0, (uint32_t)(grbl_data->spindle.rpm_programmed / 3.0f), false);
+            NavigatorSetPosition(0, nav_midpos, false);
             active = true;
             break;
 
@@ -886,6 +922,7 @@ void DROShowCanvas (lcd_display_t *lcd_screen)
 
     if(!canvasMain) {
 
+        nav_midpos = screen->Height / 2;
         canvasMain = UILibCanvasCreate(0, 0, screen->Width, screen->Height, canvasHandler);
         canvasMain->widget.bgColor = Black;
 
