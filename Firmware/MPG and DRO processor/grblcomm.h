@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-06-03 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2019, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -47,7 +47,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "serial.h"
 #include "lcd/colorRGB.h"
 
-#define NUMSTATES 13
+#define NUMSTATES 9
 
 #define X_AXIS 0
 #define Y_AXIS 1
@@ -58,19 +58,16 @@ typedef enum {
     Idle,
     Run,
     Jog,
-    Hold0,
-    Hold1,
+    Hold,
     Alarm,
     Check,
-    Door0,
-    Door1,
-    Door2,
-    Door3,
+    Door,
     Tool
 } grbl_state_t;
 
 typedef struct {
     grbl_state_t state;
+    uint8_t substate;
     RGBColor_t state_color;
     char state_text[8];
 } grbl_t;
@@ -94,19 +91,26 @@ typedef struct {
 } coolant_data_t;
 
 typedef union {
-    uint16_t flags;
+    uint32_t flags;
     struct {
-        uint16_t mpg :1,
+        uint32_t mpg :1,
                  state :1,
                  xpos :1,
                  ypos :1,
                  zpos :1,
                  offset :1,
+                 await_wco_ok: 1,
                  leds :1,
                  dist : 1,
-                 msg: 1,
+                 message: 1,
                  feed: 1,
-                 rpm: 1;
+                 rpm: 1,
+                 alarm: 1,
+                 error: 1,
+                 xmode: 1,
+                 pins: 1,
+                 reset: 1,
+                 unassigned: 15;
     };
 } changes_t;
 
@@ -121,16 +125,26 @@ typedef struct {
     bool awaitWCO;
     bool absDistance;
     bool mpgMode;
+    bool xModeDiameter;
     changes_t changed;
+    uint8_t alarm;
+    uint8_t error;
     char pins[10];
     char block[255];
+    char message[255];
 } grbl_data_t;
 
 grbl_data_t *setGrblReceiveCallback (void (*fn)(char *line));
 void setGrblTransmitCallback (void (*fn)(bool ok, grbl_data_t *grbl_data));
 void grblPollSerial (void);
 void grblSerialFlush (void);
+void grblClearAlarm (void);
+void grblClearError (void);
+void grblClearMessage (void);
 void grblSendSerial (char *line);
 bool grblParseState (char *state, grbl_t *grbl);
+
+void setGrblLegacyMode (bool on);
+char mapRTC2Legacy (char c);
 
 #endif

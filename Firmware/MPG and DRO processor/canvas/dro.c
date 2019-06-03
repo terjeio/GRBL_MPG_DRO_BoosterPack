@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v1.0.6 / 2019-04-16 / ©Io Engineering / Terje
+ * v1.0.7 / 2019-06-03 / ©Io Engineering / Terje
  */
 
 /*
@@ -46,8 +46,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 
 #include "lcd/lcd.h"
-//#include "fonts/font_23x16.h"
-#include "fonts/freepixel_17x34.h"
+
+#include "fonts.h"
 #include "fonts/arial_48x55.h"
 
 #include "UILib/uilib.h"
@@ -60,6 +60,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "navigator.h"
 #include "signals.h"
 
+#define LATHEMODE
 #define RPMROW 200
 #define STATUSROW 218
 #define MSGROW 238
@@ -105,32 +106,32 @@ typedef struct {
 } event_counters_t;
 
 typedef struct {
-    uint_fast16_t rpm;
-    uint_fast16_t mpg_rpm;
-    uint_fast16_t rpm_min;
-    uint_fast16_t rpm_max;
+    float rpm;
+    float mpg_rpm;
+    float rpm_min;
+    float rpm_max;
 } spindle_state_t;
 
 //
 
 const char *banner = "EMCO Compact 5 Lathe";
-
-const char *const jogModeStr[] = { "Fast ", "Slow ", "Step "};
+const char *const jogModeStr[] = { "Fast", "Slow", "Step"};
 const float mpgFactors[2] = {1.0f, 10.0f};
 
 //
 
 volatile uint_fast8_t event = 0;
 static bool mpgMove = false, endMove = false;
-static bool msg = false, jogging = false, keyreleased = true, disableMPG = false, mpgReset = false, settingsOK = false, active = false;
+static bool jogging = false, keyreleased = true, disableMPG = false, mpgReset = false, settingsOK = false, active = false;
+static bool isLathe = false, homingEnabled = false;
 static float angle = 0.0f;
 static uint32_t nav_midpos = 0;
 static axis_data_t axis[3];
 static jogmode_t jogMode = JogMode_Slow;
 static event_counters_t event_count;
-static grbl_data_t *grbl_data;
+static grbl_data_t *grbl_data = NULL;
 static Canvas *canvasMain = 0;
-static Label *lblResponseL = NULL, *lblResponseR = NULL, *lblGrblState = NULL;
+static Label *lblResponseL = NULL, *lblResponseR = NULL, *lblGrblState = NULL, *lblPinState = NULL, *lblFeedRate = NULL, *lblRPM = NULL, *lblJogMode = NULL;
 
 static lcd_display_t *screen;
 
@@ -154,10 +155,10 @@ static leds_t leds = {
 };
 
 static spindle_state_t spindle_state = {
-    .rpm     = 0,
-    .mpg_rpm = 0,
-    .rpm_min = 0,
-    .rpm_max = 1000
+    .rpm     = 0.0f,
+    .mpg_rpm = 200.0f,
+    .rpm_min = 0.0f,
+    .rpm_max = 1000.0f
 };
 
 static void displayGrblData (char *line);
@@ -222,7 +223,7 @@ static bool MPG_Move (void)
     bool updated = false;
     static char buffer[50];
 
-    if(grbl_data->awaitWCO || jogging || !(grbl_data->grbl.state == Idle || grbl_data->grbl.state == Run))
+    if(grbl_data->awaitWCO || jogging || grbl_data->alarm || !(grbl_data->grbl.state == Idle || grbl_data->grbl.state == Run))
         return false;
 
     strcpy(buffer, "G1");
@@ -297,6 +298,13 @@ static bool MPG_Move (void)
     return updated;
 }
 
+static void displayBanner (RGBColor_t color)
+{
+    setColor(color);
+    drawStringAligned(font_23x16, 0, 20, banner, Align_Center, screen->Width, true);
+    setColor(White);
+}
+
 static void displayPosition (uint_fast8_t i)
 {
     if(axis[i].visible) {
@@ -309,7 +317,7 @@ static void displayPosition (uint_fast8_t i)
 static void setMPGFactorBG (uint_fast8_t i, RGBColor_t color)
 {
     setColor(color);
-    fillRect(268, axis[i].row - 33, screen->Width - 1, axis[i].row - 10);
+    fillRect(268, axis[i].row - 31, screen->Width - 1, axis[i].row - 8);
     setColor(White);
 }
 
@@ -317,22 +325,26 @@ static void displayMPGFactor (uint_fast8_t i, uint_fast8_t mpg_idx)
 {
     char buf[5];
 
-    if(mpg_idx > (sizeof(mpgFactors) / sizeof(float)) - 1)
-        axis[i].mpg_idx = 0;
-
+    axis[i].mpg_idx = mpg_idx > (sizeof(mpgFactors) / sizeof(float)) - 1 ? 0 : mpg_idx;
     axis[i].mpg_factor = mpgFactors[axis[i].mpg_idx];
 
     if(axis[i].visible) {
         setMPGFactorBG(i, axis[i].mpg_factor == 1.0f ? Black : Red);
         sprintf(buf, "x%d", (uint32_t)axis[i].mpg_factor);
-        drawString(font_23x16, 269, axis[i].row - 12, buf, false);
+        drawString(font_23x16, 269, axis[i].row - 10, buf, false);
     }
 }
 
 static void displayJogMode (jogmode_t jogMode)
 {
-    setColor(jogMode == JogMode_Fast ? Red : White);
-    drawString(font_23x16, 265, RPMROW - 3, jogModeStr[jogMode], true);
+    lblJogMode->widget.fgColor = jogMode == JogMode_Fast ? Red : White;
+    UILibLabelDisplay(lblJogMode, jogModeStr[jogMode]);
+}
+
+static void displayXMode (char *mode)
+{
+    setColor(mode[0] == '?' ? Red : LawnGreen);
+    drawString(font_23x16, 269, axis[X_AXIS].row - 32, mode, true);
     setColor(White);
 }
 
@@ -348,13 +360,18 @@ static void processKeypress (void)
     bool addedGcode, jogCommand = false;
     char keycode;
 
+    if(!(keycode = keypad_get_keycode()))
+        return;
+
+    if(grbl_data->alarm && !(keycode == 'H' || keycode == '\r'))
+        return;
+
     command[0] = '\0';
 
-    if((keycode = keypad_get_keycode()))
-      switch(keycode) {
+    switch(keycode) {
 
         case '\r':
-            if(!grbl_data->mpgMode || grbl_data->grbl.state != Hold0)
+            if(!grbl_data->mpgMode || grbl_data->grbl.state != Hold)
                 signalMPGMode(!grbl_data->mpgMode);
             break;
 /*
@@ -362,6 +379,7 @@ static void processKeypress (void)
             disableMPG = true;
             break;
 */
+        case 'P':
         case 'S':                                   // Spindle
             if(grbl_data->mpgMode && grbl_data->grbl.state == Idle) {
                 bool spindle_on = !grbl_data->spindle.on;
@@ -372,7 +390,7 @@ static void processKeypress (void)
                 }
                 strcpy(command, spindle_on ? (grbl_data->spindle.ccw ? "M4" : "M3") : "M5");
                 if(spindle_on)
-                    sprintf(append(command), "S%d", spindle_state.mpg_rpm);
+                    sprintf(append(command), "S%d", (int32_t)spindle_state.mpg_rpm);
                 serialWriteLn((char *)command);
                 command[0] = '\0';
             }
@@ -433,18 +451,18 @@ static void processKeypress (void)
             }
             break;
 
-        case '!':                                   //Feed hold
+        case CMD_FEED_HOLD_LEGACY:                  //Feed hold
             if(grbl_data->mpgMode)
-                serialPutC(CMD_FEED_HOLD);
+                serialPutC(mapRTC2Legacy(CMD_FEED_HOLD));
             else {
                 event_count.signal_reset = event_interval.signal_reset;
                 signalFeedHold(true);
             }
             break;
 
-        case '~':                                   // Cycle start
+        case CMD_CYCLE_START_LEGACY:                // Cycle start
             if(grbl_data->mpgMode)
-                serialPutC(CMD_CYCLE_START);
+                serialPutC(mapRTC2Legacy(CMD_CYCLE_START));
             else {
                 event_count.signal_reset = event_interval.signal_reset;
                 signalCycleStart(true);
@@ -452,7 +470,8 @@ static void processKeypress (void)
             break;
 
         case 'H':                                   // Home axes
-//            strcpy(command, "$H");
+            if(homingEnabled)
+                strcpy(command, "$H");
             break;
 
         case JOG_XR:                                // Jog X
@@ -543,13 +562,6 @@ static void processKeypress (void)
     }
 }
 
-static void clearMessage (void)
-{
-    msg = false;
-    UILibLabelClear(lblResponseL);
-    UILibLabelClear(lblResponseR);
-}
-
 void keyEvent (bool keyDown, char key)
 {
     // NOTE: key is read from input buffer during event processing
@@ -573,14 +585,16 @@ void parseSettings (char *line)
     float value;
 
     if(!strcmp(line, "ok")) {
-        settingsOK = true;
         setGrblReceiveCallback(displayGrblData);
+        if(settingsOK && grbl_data->mpgMode)
+            displayBanner(Blue);
     } else if(line[0] == '$' && strchr(line, '=')) {
 
         line = strtok(&line[1], "=");
         setting = atoi(line);
         line = strtok(NULL, "=");
         value = atof(line);
+        settingsOK = setting > 100;
 
         switch((setting_type_t)setting) {
 
@@ -616,10 +630,28 @@ void parseSettings (char *line)
                 spindle_state.rpm_max = value;
                 break;
 
+            case Setting_EnableLegacyRTCommands:
+                setGrblLegacyMode((uint32_t)value != 0);
+                break;
+
+            case Setting_HomingEnable:
+                    homingEnabled = ((uint32_t)value & 0x01) != 0;
+                    break;
+
+            case Setting_LaserMode:
+                if((isLathe = value == 2)) {
+                    axis[Y_AXIS].visible = false;
+                    axis[Z_AXIS].row = YROW;
+                    axis[Z_AXIS].visible = true;
+                    displayXMode("?");
+                }
+                break;
+
             default:
                 break;
         }
-    }
+    } else if(grbl_data->mpgMode)
+        serialWriteLn("$$"); // MPG mode switched off before we got all settings, rerequest
 }
 
 void awaitOK (char *line)
@@ -641,23 +673,33 @@ static void displayGrblData (char *line)
             lblGrblState->widget.fgColor = grbl_data->grbl.state_color;
             UILibLabelDisplay(lblGrblState, grbl_data->grbl.state_text);
             leds.run = grbl_data->grbl.state == Run || grbl_data->grbl.state == Jog;
-            leds.hold = grbl_data->grbl.state == Hold0 || grbl_data->grbl.state == Hold1;
+            leds.hold = grbl_data->grbl.state == Hold;
             keypad_leds(leds);
-            if(msg && grbl_data->grbl.state != Alarm)
-                clearMessage();
             if(grbl_data->grbl.state == Idle)
                 MPG_ResetPosition(false);
         }
 
-        if(grbl_data->changed.msg) {
-            if((msg = !strncmp(line, "[MSG:", 5)))
-                UILibLabelDisplay(lblResponseL, &line[5]);
-            else if((msg = !strncmp(line, "error:", 6) || !strncmp(line, "ALARM:", 6)))
+        if(grbl_data->changed.alarm) {
+            if(grbl_data->alarm) {
+                sprintf(line, "ALARM:%d", grbl_data->alarm);
                 UILibLabelDisplay(lblResponseR, line);
+            } else
+                UILibLabelClear(lblResponseR);
         }
 
-        if(grbl_data->changed.offset) {
-            if(mpgReset && grbl_data->grbl.state == Idle) {
+        if(grbl_data->changed.error) {
+            if(grbl_data->error) {
+                sprintf(line, "ERROR:%d", grbl_data->error);
+                UILibLabelDisplay(lblResponseR, line);
+            } else
+                UILibLabelClear(lblResponseR);
+        }
+
+        if(grbl_data->changed.message)
+             UILibLabelDisplay(lblResponseL, grbl_data->message);
+
+        if(grbl_data->changed.offset || grbl_data->changed.await_wco_ok) {
+            if((mpgReset || grbl_data->changed.await_wco_ok) && grbl_data->grbl.state == Idle) {
                 mpgReset = false;
                 MPG_ResetPosition(false);
             }
@@ -681,7 +723,8 @@ static void displayGrblData (char *line)
         }
 
         if(grbl_data->changed.mpg) {
-            signalMPGMode(grbl_data->mpgMode);
+            if(grbl_data->mpgMode != signalIsMPGMode())
+                signalMPGMode(grbl_data->mpgMode);
             keypad_forward(!grbl_data->mpgMode);
             if(grbl_data->mpgMode) {
                 serialWriteLn("$G");
@@ -689,6 +732,7 @@ static void displayGrblData (char *line)
                 displayMPGFactor(X_AXIS, axis[X_AXIS].mpg_idx);
                 displayMPGFactor(Y_AXIS, axis[Y_AXIS].mpg_idx);
                 displayMPGFactor(Z_AXIS, axis[Z_AXIS].mpg_idx);
+                displayBanner(settingsOK ? Blue : Red);
             } else {
                 c = 3;
                 do {
@@ -698,25 +742,26 @@ static void displayGrblData (char *line)
                     }
                     setMPGFactorBG(c, Black);
                 } while(c);
+                displayBanner(White);
             }
-            setColor(grbl_data->mpgMode ? Blue : White);
             leds.mode = grbl_data->mpgMode;
             keypad_leds(leds);
-            drawStringAligned(font_23x16, 0, 20, banner, Align_Center, screen->Width, true);
         }
 
         if(grbl_data->changed.feed) {
             sprintf(line, "%6.1f", grbl_data->feed_rate);
-            setColor(White);
-            drawString(font_23x16, 145, STATUSROW, line, true);
+            UILibLabelDisplay(lblFeedRate, line);
         }
 
         if(grbl_data->changed.rpm) {
+            bool display_actual = grbl_data->spindle.on && grbl_data->spindle.rpm_actual > 0.0f;
             if(grbl_data->spindle.rpm_programmed > 0.0f)
                 spindle_state.mpg_rpm = (uint32_t)grbl_data->spindle.rpm_programmed;
-            sprintf(line, "%6.1f", grbl_data->spindle.rpm_actual);
-            setColor(grbl_data->spindle.rpm_actual > 2000.0f ? Coral : White); // TODO: add config for RPM warning
-            drawString(font_freepixel_17x34, 60, RPMROW, line, true);
+            if(display_actual || leds.spindle != grbl_data->spindle.on) {
+                sprintf(line, "%6.1f", display_actual ? grbl_data->spindle.rpm_actual : spindle_state.mpg_rpm);
+                lblRPM->widget.fgColor = display_actual ? (grbl_data->spindle.rpm_actual > 2000.0f ? Coral : White) : Coral;
+                UILibLabelDisplay(lblRPM, line);
+            }
         }
 
         if(grbl_data->changed.leds) {
@@ -726,8 +771,11 @@ static void displayGrblData (char *line)
             keypad_leds(leds);
         }
 
-        setColor(White);
-        drawString(font_23x16, 220, STATUSROW, grbl_data->pins, true);
+        if(grbl_data->changed.pins)
+            UILibLabelDisplay(lblPinState, grbl_data->pins);
+
+        if(grbl_data->changed.xmode)
+            displayXMode(grbl_data->xModeDiameter ? "D" : "R");
 
         grbl_data->changed.flags = 0;
     }
@@ -782,7 +830,7 @@ void DROProcessEvents (void)
         if(event & EVENT_DRO) {
             event &= ~EVENT_DRO;
             if(!mpgMove)
-                serialPutC('?'); // Request realtime status from grbl
+                serialPutC(grbl_data->awaitWCO ? CMD_STATUS_REPORT_ALL : mapRTC2Legacy(CMD_STATUS_REPORT)); // Request realtime status from grbl
         }
 
         if(event & EVENT_JOGMODECHANGED) {
@@ -821,45 +869,60 @@ static void canvasHandler (Widget *self, Event *uievent)
 
         case EventPointerUp:
             uievent->claimed = true;
-            if(grbl_data->grbl.state == Idle || grbl_data->grbl.state == Alarm || grbl_data->grbl.state == Unknown) {
+            if(grbl_data->grbl.state == Idle || grbl_data->grbl.state == Alarm || grbl_data->grbl.state == Unknown || grbl_data->alarm) {
                 active = false;
                 MenuShowCanvas(grbl_data->mpgMode);
             }
             break;
 
-        case EventPointerChanged:
+        case EventPointerChanged: // Used to set spindle RPM
             {
                 uievent->claimed = true;
                 // TODO: issue spindle override command(s) when not idle?
-                int32_t rpm = NavigatorGetYPosition() - nav_midpos;
-                if(abs(rpm) < 10 && grbl_data->mpgMode && grbl_data->grbl.state == Idle) {
+                if(grbl_data->mpgMode && !mpgReset && grbl_data->grbl.state == Idle) {
                     char command[10];
-                    rpm = (int32_t)spindle_state.mpg_rpm + rpm * 8;
-                    if(rpm < 0 || rpm < spindle_state.rpm_min)
+                    float rpm = (float)((int32_t)(uievent->y - nav_midpos));
+                    if(rpm > 5.0f)
+                        rpm = 5.0f;
+                    else if(rpm < -5.0f)
+                        rpm = -5.0f;
+                    rpm = spindle_state.mpg_rpm + rpm * 8.0f;
+                    if(rpm < 0.0f || rpm < spindle_state.rpm_min)
                         rpm = spindle_state.rpm_min;
                     else if (rpm > spindle_state.rpm_max)
                         rpm = spindle_state.rpm_max;
-                    spindle_state.mpg_rpm = (uint32_t)rpm;
-                    sprintf(command, "S%d", spindle_state.mpg_rpm);
-                    serialWriteLn((char *)command);
+                    spindle_state.mpg_rpm = rpm;
+                    if(grbl_data->spindle.on) {
+                        sprintf(command, "S%d", (int32_t)spindle_state.mpg_rpm);
+                        serialWriteLn((char *)command);
+                    }
+                    sprintf(command, "%6.1f", spindle_state.mpg_rpm);
+                    lblRPM->widget.fgColor = Coral;
+                    UILibLabelDisplay(lblRPM, command);
                 }
                 NavigatorSetPosition(0, nav_midpos, false);
             }
             break;
 
-        case EventWidgetPainted:
+        case EventWidgetPainted:;
+            char rpm[10];
             event = 0;
-            setColor(grbl_data->mpgMode ? Blue : White);
             setBackgroundColor(canvasMain->widget.bgColor);
-            drawStringAligned(font_23x16, 0, 20, banner, Align_Center, screen->Width, true);
-            setColor(White);
-            if(axis[X_AXIS].visible)
+            displayBanner(grbl_data->mpgMode ? (settingsOK ? Blue : Red) : White);
+            if(axis[X_AXIS].visible) {
                 drawStringAligned(POSFONT, 0, axis[X_AXIS].row, "X:", Align_Right, POSCOL - 5, false);
+#ifdef LATHEMODE
+                displayXMode("?");
+#endif
+            }
             if(axis[Y_AXIS].visible)
                 drawStringAligned(POSFONT, 0, axis[Y_AXIS].row, "Y:", Align_Right, POSCOL - 5, false);
             if(axis[Z_AXIS].visible)
                 drawStringAligned(POSFONT, 0, axis[Z_AXIS].row, "Z:", Align_Right, POSCOL - 5, false);
             drawString(font_freepixel_17x34, 5, RPMROW, "RPM:", false);
+            sprintf(rpm, "%6.1f", spindle_state.mpg_rpm);
+            lblRPM->widget.fgColor = Coral;
+            UILibLabelDisplay(lblRPM, rpm);
             drawString(font_23x16, 220, RPMROW - 3, "Jog:", false);
             drawString(font_23x16, 87, STATUSROW, "Feed:", true);
             setJogModeChangedCallback(jogModeChanged);
@@ -902,12 +965,21 @@ void DROInitCanvas (void)
 
     memset(&axis, 0, sizeof(axis));
 
+#ifdef LATHEMODE
     axis[X_AXIS].row = XROW;
     axis[X_AXIS].visible = true;
     axis[Y_AXIS].row = YROW;
     axis[Y_AXIS].visible = false;
     axis[Z_AXIS].row = YROW;
     axis[Z_AXIS].visible = true;
+#else
+    axis[X_AXIS].row = XROW;
+    axis[X_AXIS].visible = true;
+    axis[Y_AXIS].row = YROW;
+    axis[Y_AXIS].visible = true;
+    axis[Z_AXIS].row = ZROW;
+    axis[Z_AXIS].visible = true;
+#endif
 
     i = 3;
     do {
@@ -926,8 +998,13 @@ void DROShowCanvas (lcd_display_t *lcd_screen)
         canvasMain = UILibCanvasCreate(0, 0, screen->Width, screen->Height, canvasHandler);
         canvasMain->widget.bgColor = Black;
 
+        lblRPM = UILibLabelCreate((Widget *)canvasMain, font_freepixel_17x34, White, 60, RPMROW, 100, NULL);
+        lblJogMode = UILibLabelCreate((Widget *)canvasMain, font_23x16, White, 265, RPMROW - 3, 53, NULL);
         lblGrblState = UILibLabelCreate((Widget *)canvasMain, font_23x16, White, 5, STATUSROW, 80, NULL);
-        lblResponseL = UILibLabelCreate((Widget *)canvasMain, font_23x16, White, 0, MSGROW, 209, NULL);
+        lblFeedRate = UILibLabelCreate((Widget *)canvasMain, font_23x16, White, 145, STATUSROW, 65, NULL);
+        lblFeedRate->widget.flags.alignment = Align_Right;
+        lblPinState = UILibLabelCreate((Widget *)canvasMain, font_23x16, White, 220, STATUSROW, 98, NULL);
+        lblResponseL = UILibLabelCreate((Widget *)canvasMain, font_freepixel_9x17, White, 5, MSGROW, 200, NULL);
         lblResponseR = UILibLabelCreate((Widget *)canvasMain, font_23x16, Red, 210, MSGROW, 108, NULL);
         lblResponseR->widget.flags.alignment = Align_Right;
     }
@@ -937,7 +1014,9 @@ void DROShowCanvas (lcd_display_t *lcd_screen)
     event_count.mpg_refresh = event_interval.mpg_refresh;
     event_count.signal_reset = 0;
 
-    signalMPGMode(grbl_data->mpgMode);
+    if(grbl_data)
+        signalMPGMode(grbl_data->mpgMode);
+
     keypad_leds(leds);
 
     UILibCanvasDisplay(canvasMain);

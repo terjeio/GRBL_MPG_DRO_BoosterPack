@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-05-28 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2015-2017, Terje Io
+Copyright (c) 2015-2019, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -42,15 +42,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdbool.h>
 
 #include "boot.h"
-
-#include "fonts/freepixel_9x17.h"
-
-//#include "resources.h"
-#include "resources/test.h"
-
+#include "fonts.h"
+#include "resources/elogo.h"
 #include "uilib/uilib.h"
 
-char const ioEngineering[] = "©2018 Io Engineering", version[] = "v0.01 - 2018-07-07";
+char const ioEngineering[] = "©2018-2019 Io Engineering", version[] = "v0.01 - 2019-05-28";
 
 static Canvas *canvasBoot = NULL;
 
@@ -85,5 +81,5 @@ void BOOTShowCanvas (lcd_display_t *screen)
 	drawStringAligned(font_freepixel_9x17, 0, 190, ioEngineering, Align_Center, screen->Width, false);
 	drawStringAligned(font_freepixel_9x17, 0, 205, version, Align_Center, screen->Width, false);
 
-    delay(500);
+    delay(800);
 }

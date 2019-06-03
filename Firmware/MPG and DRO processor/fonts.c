@@ -1,14 +1,14 @@
 /*
- * signals.h - signals interface
+ * fonts.c - shared fonts
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-06-25
+ * v1.0.7 / 2019-05-28 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2019, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -38,13 +38,5 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include <stdint.h>
-#include <stdbool.h>
-
-void signalsInit (void);
-void signalFeedHold (bool on);
-void signalCycleStart (bool on);
-void signalMPGMode (bool on);
-bool signalIsMPGMode (void);
-bool signalSpindleDir (void);
-
+#include "fonts/freepixel_9x17.h"
+#include "fonts/freepixel_17x34.h"

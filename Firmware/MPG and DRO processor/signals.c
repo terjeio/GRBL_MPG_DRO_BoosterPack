@@ -54,7 +54,7 @@ void signalsInit (void)
     GPIOPinTypeGPIOOutput(MPG_MODE_PORT, MPG_MODE_PIN);
     GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, MPG_MODE_PIN);
     GPIOPadConfigSet(MPG_MODE_PORT, MPG_MODE_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD);
-    GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, 0);
+    signalMPGMode(true); // default is MPG on
 
     GPIOPinTypeGPIOOutput(GPIO1_PORT, GPIO1_PIN);
     GPIOPadConfigSet(GPIO1_PORT, GPIO1_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
@@ -88,8 +88,20 @@ void signalCycleStart (bool on)
         GPIOPinWrite(SIGNALS_PORT, SIGNAL_CYCLESTART_PIN, 0);
 }
 
+bool signalIsMPGMode (void)
+{
+    return GPIOPinRead(MPG_MODE_PORT, MPG_MODE_PIN) == 0;
+}
+
 void signalMPGMode (bool on)
 {
+    // If last mode change request was not honoured then output a 1us pulse to reset
+    // grbl interrupt that may have become out of sync.
+    if((GPIOPinRead(MPG_MODE_PORT, MPG_MODE_PIN) == 0) == on) {
+        GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, on ? MPG_MODE_PIN : 0);
+        _delay_cycles(80); // 1us on a 80MHz MCU
+    }
+
     GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, on ? 0 : MPG_MODE_PIN);
 }
 

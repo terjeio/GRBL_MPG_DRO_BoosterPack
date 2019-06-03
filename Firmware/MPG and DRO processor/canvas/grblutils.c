@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-06-03 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2019, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -38,13 +38,16 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include <stdio.h>
 #include <string.h>
 
+#include "fonts.h"
 #include "grblcomm.h"
 #include "uilib/uilib.h"
 
 static Canvas *canvasUtils = 0, *canvasPrevious;
-static Label *lblResponse = NULL;
+static Label *lblResponseL = NULL, *lblResponseR = NULL;
+static grbl_data_t *grbl_data = NULL;
 
 /*
  * Event handlers
@@ -95,7 +98,29 @@ static void handlerExit (Widget *self, Event *event)
 
 static void showResponse (char *line)
 {
-    UILibLabelDisplay(lblResponse, strncmp(line, "[MSG:", 5) ? line : &line[5]);
+    if(grbl_data->changed.flags) {
+
+        if(grbl_data->changed.alarm) {
+            if(grbl_data->alarm) {
+                sprintf(line, "ALARM:%d", grbl_data->alarm);
+                UILibLabelDisplay(lblResponseR, line);
+            } else
+                UILibLabelClear(lblResponseR);
+        }
+
+        if(grbl_data->changed.error) {
+            if(grbl_data->error) {
+                sprintf(line, "ERROR:%d", grbl_data->error);
+                UILibLabelDisplay(lblResponseR, line);
+            } else
+                UILibLabelClear(lblResponseR);
+        }
+
+        if(grbl_data->changed.message)
+             UILibLabelDisplay(lblResponseL, grbl_data->message);
+
+        grbl_data->changed.flags = 0;
+    }
 }
 
 /*
@@ -112,13 +137,15 @@ void GRBLUtilsShowCanvas (void)
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 40, "Exit", handlerExit), 250);
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 65, "Reset", handlerReset), 250);
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 90, "Unlock", handlerUnlock), 250);
-        lblResponse = UILibLabelCreate((Widget *)canvasUtils, font_23x16, White, 0, 239, 320, NULL);
+        lblResponseL = UILibLabelCreate((Widget *)canvasUtils, font_freepixel_9x17, White, 5, 239, 200, NULL);
+        lblResponseR = UILibLabelCreate((Widget *)canvasUtils, font_23x16, Red, 210, 239, 108, NULL);
+        lblResponseR->widget.flags.alignment = Align_Right;
     }
 
     canvasPrevious = UILibCanvasGetCurrent();
 
     UILibCanvasDisplay(canvasUtils);
-    setGrblReceiveCallback(showResponse);
+    grbl_data = setGrblReceiveCallback(showResponse);
     setColor(White);
     drawStringAligned(font_23x16, 0, 22, "grbl Utilities", Align_Center, 320, false);
 }

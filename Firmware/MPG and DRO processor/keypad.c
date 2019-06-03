@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
+ * v0.0.1 / 2018-07-17 / ©Io Engineering / Terje
  */
 
 /*
@@ -110,7 +110,7 @@ static void enqueue_keycode (char c)
     if(c == 'q' || c == 'r' || c == 's' || c == 't') // temp until keypad is corrected?
         c += 4;
 
-    if((i2c_s.claimed = i2c_s.forward && !(c == '\r' || c == 'h' || c == CMD_FEED_HOLD || c == CMD_CYCLE_START))) {
+    if((i2c_s.claimed = i2c_s.forward && !(c == '\r' || c == 'h' || c == CMD_FEED_HOLD_LEGACY || c == CMD_CYCLE_START_LEGACY))) {
         i2c_s.keycode = c;
         GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, GPIO_PIN_2);
         return;

@@ -2,6 +2,7 @@
   config.h - compile time configuration, see note below
   Part of Grbl
 
+  Copyright (c) 2019 Terje Io
   Copyright (c) 2012-2016 Sungeun K. Jeon for Gnea Research LLC
   Copyright (c) 2009-2011 Simen Svale Skogsrud
 
@@ -34,11 +35,16 @@
 #define CMD_EXIT 0x03 // ctrl-C
 #define CMD_RESET 0x18 // ctrl-X
 #define CMD_STOP 0x19 // ctrl-Y
-#define CMD_STATUS_REPORT '?'
-#define CMD_CYCLE_START '~'
-#define CMD_FEED_HOLD '!'
-#define CMD_PID_REPORT '#'
+#define CMD_STATUS_REPORT_LEGACY '?'
+#define CMD_CYCLE_START_LEGACY '~'
+#define CMD_FEED_HOLD_LEGACY '!'
 
+#define CMD_STATUS_REPORT 0x80
+#define CMD_CYCLE_START 0x81
+#define CMD_FEED_HOLD 0x82
+#define CMD_SAFETY_DOOR 0x84
+#define CMD_JOG_CANCEL  0x85
+#define CMD_STATUS_REPORT_ALL 0x87
 
 // NOTE: All override realtime commands must be in the extended ASCII character set, starting
 // at character value 128 (0x80) and up to 255 (0xFF). If the normal set of realtime commands,
@@ -95,24 +101,22 @@ typedef enum {
     Setting_PulseDelayMicroseconds = 29,
     Setting_RpmMax = 30,
     Setting_RpmMin = 31,
-    Setting_LaserMode = 32,
+    Setting_LaserMode = 32, // TODO: rename - shared with lathe mode
     Setting_PWMFreq = 33,
     Setting_PWMOffValue = 34,
     Setting_PWMMinValue = 35,
     Setting_PWMMaxValue = 36,
     Setting_StepperDeenergizeMask = 37,
-    Setting_GRBLMaxValue = 37, // NOTE: Always set to highest non-axis setting parameter
-    Setting_SpindlePPR  = 38,
-    Setting_SpindlePGain  = 39,
-    Setting_SpindleIGain  = 40,
-    Setting_SpindleDGain  = 41,
+    Setting_SpindlePPR = 38,
+    Setting_EnableLegacyRTCommands = 39,
+
     Setting_HomingLocateCycles = 43,
-    Setting_HomingCycle_1  = 44,
-    Setting_HomingCycle_2  = 45,
-    Setting_HomingCycle_3  = 46,
-    Setting_HomingCycle_4  = 47,
-    Setting_HomingCycle_5  = 48,
-    Setting_HomingCycle_6  = 49,
+    Setting_HomingCycle_1 = 44,
+    Setting_HomingCycle_2 = 45,
+    Setting_HomingCycle_3 = 46,
+    Setting_HomingCycle_4 = 47,
+    Setting_HomingCycle_5 = 48,
+    Setting_HomingCycle_6 = 49,
 // Optional driver implemented settings for jogging
     Setting_JogStepSpeed = 50,
     Setting_JogSlowSpeed = 51,
@@ -129,6 +133,25 @@ typedef enum {
     Setting_CheckLimitsAtInit = 65,
     Setting_HomingInitLock = 66,
     Settings_Stream = 70,
+// Optional settings for closed loop spindle speed control
+    Setting_SpindlePGain = 80,
+    Setting_SpindleIGain = 81,
+    Setting_SpindleDGain = 82,
+    Setting_SpindleDeadband = 83,
+    Setting_SpindleMaxError = 84,
+    Setting_SpindleIMaxError = 85,
+    Setting_SpindleDMaxError = 86,
+
+// Optional settings for closed loop spindle synchronized motion
+    Setting_PositionPGain = 90,
+    Setting_PositionIGain = 91,
+    Setting_PositionDGain = 92,
+    Setting_PositionDeadband = 93,
+    Setting_PositionMaxError = 94,
+    Setting_PositionIMaxError = 95,
+    Setting_PositionDMaxError = 96,
+//
+
     Setting_AxisSettingsBase = 100, // NOTE: Reserving settings values >= 100 for axis settings. Up to 255.
     Setting_AxisSettingsMax = 255
 } setting_type_t;

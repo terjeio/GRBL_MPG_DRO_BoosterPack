@@ -62,7 +62,6 @@ void main (void)
 
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
 
-
     initGraphics();
     setOrientation(Orientation_Horizontal);
     UILibInit();

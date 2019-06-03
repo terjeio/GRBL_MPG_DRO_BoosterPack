@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-15 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-06-03 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2019, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -97,7 +97,7 @@ static void sendGCode (bool ok, grbl_data_t *grbl_data)
     if(grbl_data->changed.state) {
 
         leds.run = grbl_data->grbl.state == Run || grbl_data->grbl.state == Jog;
-        leds.hold = grbl_data->grbl.state == Hold0 || grbl_data->grbl.state == Hold1;
+        leds.hold = grbl_data->grbl.state == Hold;
         keypad_leds(leds);
 
         if(jobState == JobComplete && grbl_data->grbl.state == Idle)
@@ -109,8 +109,8 @@ static void sendGCode (bool ok, grbl_data_t *grbl_data)
 
     if(grbl_data->grbl.state == Run) {
 
-        if(grbl_data->changed.msg && !strncmp(grbl_data->block, "[MSG:", 5))
-            UILibLabelDisplay(lblPass, &grbl_data->block[5]);
+        if(grbl_data->changed.message)
+            UILibLabelDisplay(lblPass, grbl_data->message);
 
         if(grbl_data->changed.xpos) {
             sprintf(grbl_data->block, "% 9.3f", grbl_data->position[X_AXIS]);
@@ -176,7 +176,7 @@ static void handlerCanvas (Widget *self, Event *event)
                         sendGCode(true, NULL); // Send first block to start transmission
                     }
                 } else if(grblReady)
-                    serialPutC('?'); // Request realtime status from grbl
+                    serialPutC(mapRTC2Legacy(CMD_STATUS_REPORT)); // Request realtime status from grbl
                 rqdly = 20;
             }
 
@@ -186,12 +186,12 @@ static void handlerCanvas (Widget *self, Event *event)
 
                 switch(keypad_get_keycode()) {
 
-                    case CMD_FEED_HOLD:                         //Feed hold TODO: disable when threading? In grbl?
-                        serialPutC(CMD_FEED_HOLD);
+                    case CMD_FEED_HOLD_LEGACY:                  //Feed hold
+                        serialPutC(mapRTC2Legacy(CMD_FEED_HOLD));
                         break;
 
-                    case CMD_CYCLE_START:                       // Cycle start
-                        serialPutC(CMD_CYCLE_START);
+                    case CMD_CYCLE_START_LEGACY:                       // Cycle start
+                        serialPutC(mapRTC2Legacy(CMD_CYCLE_START));
                         break;
 
                     case 'M':                                   // Mist override
