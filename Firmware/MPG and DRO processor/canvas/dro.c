@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v1.0.7 / 2019-06-03 / ©Io Engineering / Terje
+ * v1.0.8 / 2019-08-20 / ©Io Engineering / Terje
  */
 
 /*
@@ -114,7 +114,6 @@ typedef struct {
 
 //
 
-const char *banner = "EMCO Compact 5 Lathe";
 const char *const jogModeStr[] = { "Fast", "Slow", "Step"};
 const float mpgFactors[2] = {1.0f, 10.0f};
 
@@ -125,6 +124,7 @@ static bool mpgMove = false, endMove = false;
 static bool jogging = false, keyreleased = true, disableMPG = false, mpgReset = false, settingsOK = false, active = false;
 static bool isLathe = false, homingEnabled = false;
 static float angle = 0.0f;
+static char request[10] = {0};
 static uint32_t nav_midpos = 0;
 static axis_data_t axis[3];
 static jogmode_t jogMode = JogMode_Slow;
@@ -301,7 +301,7 @@ static bool MPG_Move (void)
 static void displayBanner (RGBColor_t color)
 {
     setColor(color);
-    drawStringAligned(font_23x16, 0, 20, banner, Align_Center, screen->Width, true);
+    drawStringAligned(font_23x16, 0, 20, grbl_data->device, Align_Center, screen->Width, true);
     setColor(White);
 }
 
@@ -374,26 +374,24 @@ static void processKeypress (void)
             if(!grbl_data->mpgMode || grbl_data->grbl.state != Hold)
                 signalMPGMode(!grbl_data->mpgMode);
             break;
-/*
-        case 'u':
-            disableMPG = true;
-            break;
-*/
+
         case 'P':
         case 'S':                                   // Spindle
-            if(grbl_data->mpgMode && grbl_data->grbl.state == Idle) {
-                bool spindle_on = !grbl_data->spindle.on;
-                if(spindle_on) {
-                    grbl_data->spindle.ccw = signalSpindleDir();
-                    if(spindle_state.mpg_rpm == 0)
-                        spindle_state.mpg_rpm = 400;
-                }
-                strcpy(command, spindle_on ? (grbl_data->spindle.ccw ? "M4" : "M3") : "M5");
-                if(spindle_on)
-                    sprintf(append(command), "S%d", (int32_t)spindle_state.mpg_rpm);
-                serialWriteLn((char *)command);
-                command[0] = '\0';
-            }
+            if(grbl_data->mpgMode)
+                if(grbl_data->grbl.state == Idle) {
+                    bool spindle_on = !grbl_data->spindle.on;
+                    if(spindle_on) {
+                        grbl_data->spindle.ccw = signalSpindleDir();
+                        if(spindle_state.mpg_rpm == 0)
+                            spindle_state.mpg_rpm = 400;
+                    }
+                    strcpy(command, spindle_on ? (grbl_data->spindle.ccw ? "M4" : "M3") : "M5");
+                    if(spindle_on)
+                        sprintf(append(command), "S%d", (int32_t)spindle_state.mpg_rpm);
+                    serialWriteLn((char *)command);
+                    command[0] = '\0';
+                } else if(grbl_data->grbl.state == Hold || grbl_data->grbl.state == Door)
+                    serialPutC(CMD_SPINDLE_OVR_STOP);
             break;
 
         case 'M':                                   // Mist override
@@ -470,8 +468,10 @@ static void processKeypress (void)
             break;
 
         case 'H':                                   // Home axes
-            if(homingEnabled)
+            if(homingEnabled) {
+                signalLimitsOverride(false);
                 strcpy(command, "$H");
+            }
             break;
 
         case JOG_XR:                                // Jog X
@@ -584,10 +584,12 @@ void parseSettings (char *line)
     uint_fast16_t setting;
     float value;
 
-    if(!strcmp(line, "ok")) {
+    if(!strcmp(line, "ok") || grbl_data->changed.reset || !grbl_data->mpgMode) {
         setGrblReceiveCallback(displayGrblData);
-        if(settingsOK && grbl_data->mpgMode)
-            displayBanner(Blue);
+        if(settingsOK && request[0] != '\0') {
+            serialWriteLn(request);
+            request[0] = '\0';
+        }
     } else if(line[0] == '$' && strchr(line, '=')) {
 
         line = strtok(&line[1], "=");
@@ -635,8 +637,8 @@ void parseSettings (char *line)
                 break;
 
             case Setting_HomingEnable:
-                    homingEnabled = ((uint32_t)value & 0x01) != 0;
-                    break;
+                homingEnabled = ((uint32_t)value & 0x01) != 0;
+                break;
 
             case Setting_LaserMode:
                 if((isLathe = value == 2)) {
@@ -650,14 +652,7 @@ void parseSettings (char *line)
             default:
                 break;
         }
-    } else if(grbl_data->mpgMode)
-        serialWriteLn("$$"); // MPG mode switched off before we got all settings, rerequest
-}
-
-void awaitOK (char *line)
-{
-    if(!strcmp(line, "ok"))
-        setGrblReceiveCallback(parseSettings);
+    }
 }
 
 static void displayGrblData (char *line)
@@ -669,14 +664,31 @@ static void displayGrblData (char *line)
 
     if(grbl_data->changed.flags) {
 
+        if(grbl_data->changed.reset)
+            settingsOK = false;
+
         if(grbl_data->changed.state) {
             lblGrblState->widget.fgColor = grbl_data->grbl.state_color;
             UILibLabelDisplay(lblGrblState, grbl_data->grbl.state_text);
             leds.run = grbl_data->grbl.state == Run || grbl_data->grbl.state == Jog;
             leds.hold = grbl_data->grbl.state == Hold;
             keypad_leds(leds);
-            if(grbl_data->grbl.state == Idle)
-                MPG_ResetPosition(false);
+
+            switch(grbl_data->grbl.state) {
+
+                case Idle:
+                    MPG_ResetPosition(false);
+                    break;
+
+                case Home:
+                    signalLimitsOverride(false);
+                    break;
+
+                case Alarm: // Switch to MPG mode if alarm #11 issued (homing required)
+                    if(grbl_data->grbl.substate == 11 && !settingsOK && !grbl_data->mpgMode)
+                        signalMPGMode(true); // default is MPG on
+                    break;
+            }
         }
 
         if(grbl_data->changed.alarm) {
@@ -727,12 +739,11 @@ static void displayGrblData (char *line)
                 signalMPGMode(grbl_data->mpgMode);
             keypad_forward(!grbl_data->mpgMode);
             if(grbl_data->mpgMode) {
-                serialWriteLn("$G");
+                strcpy(request, settingsOK ? "$G" : "$I\r\n$G");
                 MPG_ResetPosition(true);
                 displayMPGFactor(X_AXIS, axis[X_AXIS].mpg_idx);
                 displayMPGFactor(Y_AXIS, axis[Y_AXIS].mpg_idx);
                 displayMPGFactor(Z_AXIS, axis[Z_AXIS].mpg_idx);
-                displayBanner(settingsOK ? Blue : Red);
             } else {
                 c = 3;
                 do {
@@ -742,8 +753,8 @@ static void displayGrblData (char *line)
                     }
                     setMPGFactorBG(c, Black);
                 } while(c);
-                displayBanner(White);
             }
+            grbl_data->changed.device = true;
             leds.mode = grbl_data->mpgMode;
             keypad_leds(leds);
         }
@@ -774,15 +785,23 @@ static void displayGrblData (char *line)
         if(grbl_data->changed.pins)
             UILibLabelDisplay(lblPinState, grbl_data->pins);
 
-        if(grbl_data->changed.xmode)
+        if(grbl_data->changed.xmode && isLathe)
             displayXMode(grbl_data->xModeDiameter ? "D" : "R");
+
+        if(grbl_data->changed.device)
+            displayBanner(grbl_data->mpgMode ? (settingsOK ? Blue : Red) : White);
 
         grbl_data->changed.flags = 0;
     }
 
-    if(!settingsOK && grbl_data->mpgMode) {
-        serialWriteLn("$$");
-        setGrblReceiveCallback(awaitOK);
+    if(grbl_data->mpgMode) {
+        if(!settingsOK) {
+            setGrblReceiveCallback(parseSettings);
+            serialWriteLn("$$");
+        } else if(request[0] != '\0') {
+            serialWriteLn(request);
+            request[0] = '\0';
+        }
     }
 }
 
@@ -908,7 +927,7 @@ static void canvasHandler (Widget *self, Event *uievent)
             char rpm[10];
             event = 0;
             setBackgroundColor(canvasMain->widget.bgColor);
-            displayBanner(grbl_data->mpgMode ? (settingsOK ? Blue : Red) : White);
+            grbl_data = setGrblReceiveCallback(displayGrblData);
             if(axis[X_AXIS].visible) {
                 drawStringAligned(POSFONT, 0, axis[X_AXIS].row, "X:", Align_Right, POSCOL - 5, false);
 #ifdef LATHEMODE
@@ -935,8 +954,8 @@ static void canvasHandler (Widget *self, Event *uievent)
             leds = keypad_GetLedState();
             keypad_forward(!grbl_data->mpgMode);
             setKeyclickCallback2(keyEvent, false);
-            grbl_data = setGrblReceiveCallback(displayGrblData);
             NavigatorSetPosition(0, nav_midpos, false);
+//            serialPutC(CMD_STATUS_REPORT_ALL); // Request realtime status from grbl
             active = true;
             break;
 
@@ -954,7 +973,9 @@ void DROInitCanvas (void)
 {
     int_fast8_t i;
 
-    signalsInit();
+    delay(1);
+    signalMPGMode(true); // default is MPG on
+
     serialInit();
 
 //    RPM_Init();
