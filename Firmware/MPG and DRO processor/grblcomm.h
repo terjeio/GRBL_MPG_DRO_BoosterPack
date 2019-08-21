@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2019-06-03 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-06-13 / ©Io Engineering / Terje
  */
 
 /*
@@ -47,11 +47,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "serial.h"
 #include "lcd/colorRGB.h"
 
-#define NUMSTATES 9
+#define NUMSTATES 11
 
 #define X_AXIS 0
 #define Y_AXIS 1
 #define Z_AXIS 2
+
+#define MAX_BLOCK_LENGTH 256
 
 typedef enum {
     Unknown = 0,
@@ -62,7 +64,9 @@ typedef enum {
     Alarm,
     Check,
     Door,
-    Tool
+    Tool,
+    Home,
+    Sleep
 } grbl_state_t;
 
 typedef struct {
@@ -110,7 +114,8 @@ typedef union {
                  xmode: 1,
                  pins: 1,
                  reset: 1,
-                 unassigned: 15;
+                 device: 1,
+                 unassigned: 14;
     };
 } changes_t;
 
@@ -130,8 +135,9 @@ typedef struct {
     uint8_t alarm;
     uint8_t error;
     char pins[10];
-    char block[255];
-    char message[255];
+    char block[MAX_BLOCK_LENGTH];
+    char message[MAX_BLOCK_LENGTH];
+    char device[MAX_STORED_LINE_LENGTH];
 } grbl_data_t;
 
 grbl_data_t *setGrblReceiveCallback (void (*fn)(char *line));

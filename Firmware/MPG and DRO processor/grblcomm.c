@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2019-06-03 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-08-20 / ©Io Engineering / Terje
  */
 
 /*
@@ -48,6 +48,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "grblcomm.h"
 
 #define SERIAL_NO_DATA -1
+#define MAX_BLOCK_LENGTH 256
 
 // This array must match the grbl_state_t enum in grblcomm.h!
 const char *const grblState[NUMSTATES] = {
@@ -59,7 +60,9 @@ const char *const grblState[NUMSTATES] = {
     "Alarm",
     "Check",
     "Door",
-    "Tool"
+    "Tool",
+    "Home",
+    "Sleep"
 };
 
 // This array must match the grbl_state_t in grblcomm.h!
@@ -72,10 +75,13 @@ const RGBColor_t grblStateColor[NUMSTATES] = {
     Red,
     Yellow,
     Coral,
-    Yellow
+    Yellow,
+    LightSkyBlue,
+    LightSkyBlue
 };
 
 static grbl_data_t grbl_data = {
+    .device           = "Grbl MPG & DRO",
     .changed          = (uint32_t)-1,
     .position         = {0.0f, 0.0f, 0.0f},
     .offset           = {0.0f, 0.0f, 0.0f},
@@ -133,6 +139,7 @@ grbl_data_t *setGrblReceiveCallback (void (*fn)(char *line))
     grblReceiveCallback = fn;
     grblTransmitCallback = 0;
     grbl_data.changed.flags = (uint32_t)-1;
+    grbl_data.changed.reset = false;
     grbl_data.changed.unassigned = 0;
 
     return &grbl_data;
@@ -188,7 +195,6 @@ static void parsePositions (char *data)
 
 static void parseOffsets (char *data)
 {
-
     if(grbl_data.useWPos) {
 
         grbl_data.changed.offset = grbl_data.offset[X_AXIS] != 0.0f ||
@@ -246,13 +252,14 @@ static void parseFeedSpeed (char *data)
 
 static void parseData (char *block)
 {
-    static char buf[255];
+    static char buf[MAX_BLOCK_LENGTH];
 
     uint32_t c;
     bool pins = true;
     char *line = &buf[0];
 
-    strcpy(line, block);
+    strncpy(line, block, MAX_BLOCK_LENGTH);
+    line[MAX_BLOCK_LENGTH - 1] = '\0';
 
     if(line[0] == '<') {
         pins = false;
@@ -323,10 +330,15 @@ static void parseData (char *block)
 
                         case 'F':
                             grbl_data.coolant.flood = true;
-                           break;
+                            break;
 
                         case 'S':
+                            grbl_data.spindle.ccw = false;
+                            grbl_data.spindle.on = true;
+                            break;
+
                         case 'C':
+                           grbl_data.spindle.ccw = true;
                            grbl_data.spindle.on = true;
                            break;
                     }
@@ -345,76 +357,86 @@ static void parseData (char *block)
         if(!pins && (grbl_data.changed.pins = (grbl_data.pins[0] != '\0')))
             grbl_data.pins[0] = '\0';
 
-    } else if(!strncmp(line, "[GC:", 4)) {
+    } else if(line[0] == '[') {
+        line++;
+        if(!strncmp(line, "GC:", 3)) {
 
-        line = strtok(&line[4], " ");
+            line = strtok(&line[3], " ");
 
-        while(line) {
+            while(line) {
 
-            if(!strncmp(line, "F", 1) && parseDecimal(&grbl_data.feed_rate, line + 1))
-                grbl_data.changed.feed = true;
+                if(!strncmp(line, "F", 1) && parseDecimal(&grbl_data.feed_rate, line + 1))
+                    grbl_data.changed.feed = true;
 
-            if(!strncmp(line, "S", 1) && parseDecimal(&grbl_data.spindle.rpm_programmed, line + 1))
-                grbl_data.changed.rpm = true;
+                if(!strncmp(line, "S", 1) && parseDecimal(&grbl_data.spindle.rpm_programmed, line + 1))
+                    grbl_data.changed.rpm = true;
 
-            if(!strncmp(line, "G7", 2)) {
-                grbl_data.xModeDiameter = true;
-                grbl_data.changed.xmode = true;
-            }
-
-            if(!strncmp(line, "G8", 2)) {
-                grbl_data.xModeDiameter = false;
-                grbl_data.changed.xmode = true;
-            }
-
-            if(!strncmp(line, "G90", 3) && !grbl_data.absDistance) {
-                grbl_data.absDistance = true;
-                grbl_data.changed.dist = true;
-            }
-
-            if(!strncmp(line, "G91", 3) && grbl_data.absDistance) {
-                grbl_data.absDistance = false;
-                grbl_data.changed.dist = true;
-            }
-
-            if(!strncmp(line, "M5", 2)) {
-                if(grbl_data.spindle.on)
-                    grbl_data.changed.leds = true;
-                grbl_data.spindle.on = false;
-            } else if(!strncmp(line, "M3", 2)) {
-                if(!grbl_data.spindle.on || grbl_data.spindle.ccw)
-                    grbl_data.changed.leds = true;
-                grbl_data.spindle.on = true;
-                grbl_data.spindle.ccw = false;
-            } else if(!strncmp(line, "M4", 2)) {
-                if(!grbl_data.spindle.on || !grbl_data.spindle.ccw)
-                    grbl_data.changed.leds = true;
-                grbl_data.spindle.on = true;
-                grbl_data.spindle.ccw = true;
-            }
-
-            if(!strncmp(line, "M9", 2)) {
-                if(grbl_data.coolant.mist || grbl_data.coolant.flood)
-                    grbl_data.changed.leds = true;
-                grbl_data.coolant.mist = false;
-                grbl_data.coolant.flood = false;
-            } else {
-                if(!strncmp(line, "M7", 2)) {
-                    if(!grbl_data.coolant.mist)
-                        grbl_data.changed.leds = true;
-                    grbl_data.coolant.mist = true;
+                if(!strncmp(line, "G7", 2)) {
+                    grbl_data.xModeDiameter = true;
+                    grbl_data.changed.xmode = true;
                 }
-                if(!strncmp(line, "M8", 2)) {
-                    if(!grbl_data.coolant.mist)
-                        grbl_data.changed.leds = true;
-                    grbl_data.coolant.flood = true;
+
+                if(!strncmp(line, "G8", 2)) {
+                    grbl_data.xModeDiameter = false;
+                    grbl_data.changed.xmode = true;
                 }
+
+                if(!strncmp(line, "G90", 3) && !grbl_data.absDistance) {
+                    grbl_data.absDistance = true;
+                    grbl_data.changed.dist = true;
+                }
+
+                if(!strncmp(line, "G91", 3) && grbl_data.absDistance) {
+                    grbl_data.absDistance = false;
+                    grbl_data.changed.dist = true;
+                }
+
+                if(!strncmp(line, "M5", 2)) {
+                    if(grbl_data.spindle.on)
+                        grbl_data.changed.leds = true;
+                    grbl_data.spindle.on = false;
+                } else if(!strncmp(line, "M3", 2)) {
+                    if(!grbl_data.spindle.on || grbl_data.spindle.ccw)
+                        grbl_data.changed.leds = true;
+                    grbl_data.spindle.on = true;
+                    grbl_data.spindle.ccw = false;
+                } else if(!strncmp(line, "M4", 2)) {
+                    if(!grbl_data.spindle.on || !grbl_data.spindle.ccw)
+                        grbl_data.changed.leds = true;
+                    grbl_data.spindle.on = true;
+                    grbl_data.spindle.ccw = true;
+                }
+
+                if(!strncmp(line, "M9", 2)) {
+                    if(grbl_data.coolant.mist || grbl_data.coolant.flood)
+                        grbl_data.changed.leds = true;
+                    grbl_data.coolant.mist = false;
+                    grbl_data.coolant.flood = false;
+                } else {
+                    if(!strncmp(line, "M7", 2)) {
+                        if(!grbl_data.coolant.mist)
+                            grbl_data.changed.leds = true;
+                        grbl_data.coolant.mist = true;
+                    }
+                    if(!strncmp(line, "M8", 2)) {
+                        if(!grbl_data.coolant.mist)
+                            grbl_data.changed.leds = true;
+                        grbl_data.coolant.flood = true;
+                    }
+                }
+                line = strtok(NULL, " ");
             }
-            line = strtok(NULL, " ");
+        } else if(!strncmp(line, "MSG:", 4)) {
+            grbl_data.changed.message = true;
+            strncpy(grbl_data.message, line + 4, 250);
+        } else if(!strncmp(line, "VER:", 4)) {
+            line = strchr(line + 4, ':');
+            if(line && (++line)[0] != '\0') {
+                grbl_data.changed.device = true;
+                strncpy(grbl_data.device, line, MAX_STORED_LINE_LENGTH);
+                grbl_data.device[MAX_STORED_LINE_LENGTH - 1] = '\0';
+            }
         }
-    } else if(!strncmp(line, "[MSG:", 5)) {
-        grbl_data.changed.message = true;
-        strncpy(grbl_data.message, line + 5, 250);
     } else if(!strncmp(line, "error:", 6)) {
         grbl_data.error = (uint8_t)atoi(line + 6);
         grbl_data.changed.error = true;
@@ -433,8 +455,8 @@ static void parseData (char *block)
     }
 }
 
-void grblPollSerial (void) {
-
+void grblPollSerial (void)
+{
     static int_fast16_t c;
     static uint_fast16_t char_counter = 0;
 
@@ -454,12 +476,9 @@ void grblPollSerial (void) {
                 }
 
                 char_counter = 0;
-
             }
-
-        } else if(char_counter < sizeof(grbl_data.block))
-            grbl_data.block[char_counter++] = (char)c; // Upcase lowercase??
-
+        } else if(char_counter < MAX_BLOCK_LENGTH - 1)
+            grbl_data.block[char_counter++] = (char)c;
     }
 }
 

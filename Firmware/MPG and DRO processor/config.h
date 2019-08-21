@@ -1,7 +1,7 @@
 /*
  * config.h - MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-24 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-06-11 / ©Io Engineering / Terje
  */
 
 /*
@@ -60,15 +60,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // GPIO
 
-#define MPG_MODE_PERIPH     SYSCTL_PERIPH_GPIOB
-#define MPG_MODE_PORT       GPIO_PORTB_BASE     // GPIO0
-#define MPG_MODE_PIN        GPIO_PIN_3
-
-#define GPIO1_PORT          GPIO_PORTB_BASE     // GPIO1
-#define GPIO1_PIN           GPIO_PIN_2
-
 #define SPINDLEDIR_PORT     GPIO_PORTF_BASE     // GPIO1
 #define SPINDLEDIR_PIN      GPIO_PIN_3
+
+#define MPG_MODE_PERIPH     SYSCTL_PERIPH_GPIOB
+#define MPG_MODE_PORT       GPIO_PORTB_BASE     // GPIO2
+#define MPG_MODE_PIN        GPIO_PIN_3
+
+#define GPIO1_PORT          GPIO_PORTB_BASE     // GPIO3
+#define GPIO1_PIN           GPIO_PIN_2
 
 // GRBL SIGNALS
 

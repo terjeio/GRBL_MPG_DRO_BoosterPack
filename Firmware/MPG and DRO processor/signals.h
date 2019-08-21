@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-06-25
+ * v0.0.1 / 2019-06-11 / ©Io Engineering / Terje
  */
 
 /*
@@ -46,5 +46,6 @@ void signalFeedHold (bool on);
 void signalCycleStart (bool on);
 void signalMPGMode (bool on);
 bool signalIsMPGMode (void);
+void signalLimitsOverride (bool on);
 bool signalSpindleDir (void);
 

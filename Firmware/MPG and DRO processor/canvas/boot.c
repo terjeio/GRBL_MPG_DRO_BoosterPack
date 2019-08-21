@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2019-05-28 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-08-20 / ©Io Engineering / Terje
  */
 
 /*
@@ -43,10 +43,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "boot.h"
 #include "fonts.h"
+#include "signals.h"
 #include "resources/elogo.h"
 #include "uilib/uilib.h"
 
-char const ioEngineering[] = "©2018-2019 Io Engineering", version[] = "v0.01 - 2019-05-28";
+char const ioEngineering[] = "©2018-2019 Io Engineering", version[] = "v0.01 - 2019-08-20";
 
 static Canvas *canvasBoot = NULL;
 
@@ -67,19 +68,45 @@ static Canvas *canvasBoot = NULL;
 
 void BOOTShowCanvas (lcd_display_t *screen)
 {
-	if(!canvasBoot) {
+    uint32_t x = 15, timeout = 0;
+
+    if(!canvasBoot) {
 		canvasBoot = UILibCanvasCreate(0, 0, screen->Width, screen->Height, NULL);
 		canvasBoot->widget.bgColor = Black;
 
 		Image *logo = UILibImageCreate((Widget *)canvasBoot, 35, 24, 248, 56, (void *)engineering, NULL);
 		logo->widget.fgColor = White;
         logo->widget.bgColor = SeaGreen;
-	}
+
+        signalsInit();
+    }
 
 	UILibCanvasDisplay(canvasBoot);
 
 	drawStringAligned(font_freepixel_9x17, 0, 190, ioEngineering, Align_Center, screen->Width, false);
 	drawStringAligned(font_freepixel_9x17, 0, 205, version, Align_Center, screen->Width, false);
 
-    delay(800);
+    delay(300); // Wait a bit for grbl card to power up
+
+	// Wait for grbl to signal ready status
+	// (MPG mode pin pulled high)
+    while(signalIsMPGMode()) {
+
+        delay(5);
+
+        if(!(timeout % 50)) {
+            drawString(font_23x16, x, 220,  ".", false);
+            x += 8;
+            if(x > 310) {
+                setColor(canvasBoot->widget.bgColor);
+                fillRect(5, 210, 315, 220);
+                setColor(canvasBoot->widget.fgColor);
+                x = 15;
+            }
+        }
+        timeout++;
+    }
+
+	if(timeout < 500)
+	    delay(500 - timeout);
 }

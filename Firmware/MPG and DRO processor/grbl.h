@@ -71,6 +71,8 @@
 #define CMD_COOLANT_FLOOD_OVR_TOGGLE 0xA0
 #define CMD_COOLANT_MIST_OVR_TOGGLE 0xA1
 
+#define MAX_STORED_LINE_LENGTH 80
+
 typedef enum {
     Setting_PulseMicroseconds = 0,
     Setting_StepperIdleLockTime = 1,

@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-01 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-08-20 / ©Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2019 Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -51,14 +51,11 @@ void signalsInit (void)
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
 
-    GPIOPinTypeGPIOOutput(MPG_MODE_PORT, MPG_MODE_PIN);
-    GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, MPG_MODE_PIN);
-    GPIOPadConfigSet(MPG_MODE_PORT, MPG_MODE_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD);
-    signalMPGMode(true); // default is MPG on
+    GPIOPinTypeGPIOInput(MPG_MODE_PORT, MPG_MODE_PIN);
 
     GPIOPinTypeGPIOOutput(GPIO1_PORT, GPIO1_PIN);
-    GPIOPadConfigSet(GPIO1_PORT, GPIO1_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD);
-    GPIOPinWrite(GPIO1_PORT, GPIO1_PIN, 0);
+    GPIOPadConfigSet(GPIO1_PORT, GPIO1_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD);
+    GPIOPinWrite(GPIO1_PORT, GPIO1_PIN, GPIO1_PIN);
 
     GPIOPinTypeGPIOInput(SPINDLEDIR_PORT, SPINDLEDIR_PIN);
     GPIOPadConfigSet(SPINDLEDIR_PORT, SPINDLEDIR_PIN, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
@@ -95,6 +92,15 @@ bool signalIsMPGMode (void)
 
 void signalMPGMode (bool on)
 {
+    static bool initOk = false;
+
+    if(!initOk) {
+        initOk = true;
+        GPIOPinTypeGPIOOutput(MPG_MODE_PORT, MPG_MODE_PIN);
+//        GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, MPG_MODE_PIN);
+        GPIOPadConfigSet(MPG_MODE_PORT, MPG_MODE_PIN, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD);
+    }
+
     // If last mode change request was not honoured then output a 1us pulse to reset
     // grbl interrupt that may have become out of sync.
     if((GPIOPinRead(MPG_MODE_PORT, MPG_MODE_PIN) == 0) == on) {
@@ -103,6 +109,11 @@ void signalMPGMode (bool on)
     }
 
     GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, on ? 0 : MPG_MODE_PIN);
+}
+
+void signalLimitsOverride (bool on)
+{
+    GPIOPinWrite(GPIO1_PORT, GPIO1_PIN, on ? 0 : GPIO1_PIN);
 }
 
 bool signalSpindleDir (void)

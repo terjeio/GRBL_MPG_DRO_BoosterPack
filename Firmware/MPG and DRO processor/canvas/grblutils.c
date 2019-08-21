@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2019-06-03 / ©Io Engineering / Terje
+ * v0.0.1 / 2019-06-12 / ©Io Engineering / Terje
  */
 
 /*
@@ -43,10 +43,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "fonts.h"
 #include "grblcomm.h"
+#include "signals.h"
 #include "uilib/uilib.h"
 
 static Canvas *canvasUtils = 0, *canvasPrevious;
 static Label *lblResponseL = NULL, *lblResponseR = NULL;
+static Button *btnLimit;
+
 static grbl_data_t *grbl_data = NULL;
 
 /*
@@ -59,6 +62,11 @@ static void handlerReset (Widget *self, Event *event)
     if(event->reason == EventPointerUp) {
         UILibButtonFlash((Button *)self);
         serialPutC(CMD_RESET);
+        if(btnLimit->widget.flags.selected) {
+            btnLimit->widget.flags.selected = false;
+            UILibButtonFlash((Button *)self);
+            signalLimitsOverride(false);
+        }
     }
 }
 
@@ -69,6 +77,19 @@ static void handlerUnlock (Widget *self, Event *event)
         case EventPointerUp:
             UILibButtonFlash((Button *)self);
             serialWriteLn("$X");
+            break;
+    }
+}
+
+static void handlerOverride (Widget *self, Event *event)
+{
+    switch(event->reason) {
+
+        case EventPointerUp:
+           // btnLimit->widget.bgColor = Red;
+            btnLimit->widget.flags.selected = true;
+            UILibButtonFlash((Button *)self);
+            signalLimitsOverride(true);
             break;
 
         case EventPointerLeave:
@@ -82,6 +103,10 @@ static void handlerExit (Widget *self, Event *event)
     switch(event->reason) {
 
         case EventPointerUp:
+            if(btnLimit->widget.flags.selected) {
+                btnLimit->widget.flags.selected = false;
+                signalLimitsOverride(false);
+            }
             UILibCanvasDisplay(canvasPrevious);
             break;
 
@@ -137,6 +162,10 @@ void GRBLUtilsShowCanvas (void)
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 40, "Exit", handlerExit), 250);
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 65, "Reset", handlerReset), 250);
         UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasUtils, 35, 90, "Unlock", handlerUnlock), 250);
+        btnLimit = UILibButtonCreate((Widget *)canvasUtils, 35, 115, "Limits override", handlerOverride);
+        UILibWidgetSetWidth((Widget *)btnLimit, 250);
+        btnLimit->hltColor = Red;
+        btnLimit->group = 1;
         lblResponseL = UILibLabelCreate((Widget *)canvasUtils, font_freepixel_9x17, White, 5, 239, 200, NULL);
         lblResponseR = UILibLabelCreate((Widget *)canvasUtils, font_23x16, Red, 210, 239, 108, NULL);
         lblResponseR->widget.flags.alignment = Align_Right;

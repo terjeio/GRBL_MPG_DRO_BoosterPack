@@ -1,5 +1,15 @@
 ## GRBL MPG & DRO BoosterPack for Tiva C \(TM4C123G\)
 
+__2019-08-20: Improved startup sequence__
+
+The GPIO line used for signalling MPG mode change is now used to signal the grbl controller ready state during startup.
+
+On a cold start the Grbl microcontroller should pull the line low as early in the process as possible.
+When the cold start sequence is completed and grbl is ready to receive data the line should be reverted to input mode with interrupt and pullup enabled.
+The MPG microcontroller will wait for the line going high before starting any communication, displaying a progress indicator in its boot screen while waiting.
+
+---
+
 Features:
 
 * SPI LCD and touch interface
