@@ -1,0 +1,19 @@
+{
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "editor.fontSize": 12,
+    "files.associations": {
+        "irq.h": "c",
+        "i2c.h": "c",
+        "uilib.h": "c",
+        "lcd.h": "c",
+        "string.h": "c",
+        "stdbool.h": "c",
+        "mpg.h": "c",
+        "gpio.h": "c",
+        "serial.h": "c",
+        "driver.h": "c",
+        "interface.h": "c",
+        "encoder.pio.h": "c",
+        "config.h": "c"
+    }
+}
