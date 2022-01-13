@@ -53,53 +53,53 @@ static Canvas *canvasConfig = 0, *canvasPrevious;
 
 static void handlerConfig (Widget *self, Event *event)
 {
-	if(self) switch(event->reason) {
+    if(self) switch(event->reason) {
 
-		case EventPointerUp:
+        case EventPointerUp:
             event->claimed = true;
-			UILibButtonFlash((Button *)self);
-	        UILibWidgetDeselect(self);
-			break;
+            UILibButtonFlash((Button *)self);
+            UILibWidgetDeselect(self);
+            break;
 
-		case EventPointerLeave:
-			event->claimed = event->y > self->yMax;
-			break;
-	}
+        case EventPointerLeave:
+            event->claimed = event->y > self->yMax;
+            break;
+    }
 }
 
 static void handlerUtilities (Widget *self, Event *event)
 {
-	if(event->reason == EventPointerUp) {
+    if(event->reason == EventPointerUp) {
         event->claimed = true;
-		UILibButtonFlash((Button *)self);
+        UILibButtonFlash((Button *)self);
         UILibWidgetDeselect(self);
-		GRBLUtilsShowCanvas();
-	}
+        GRBLUtilsShowCanvas();
+    }
 }
 
 static void handlerThreading (Widget *self, Event *event)
 {
-	if(event->reason == EventPointerUp) {
+    if(event->reason == EventPointerUp) {
         event->claimed = true;
         UILibButtonFlash((Button *)self);
-		UILibWidgetDeselect(self);
+        UILibWidgetDeselect(self);
         ThreadingShowCanvas();
-	}
+    }
 }
 
 static void handlerExit (Widget *self, Event *event)
 {
-	if(self) switch(event->reason) {
+    if(self) switch(event->reason) {
 
-		case EventPointerUp:
-	        UILibWidgetDeselect(self);
-			UILibCanvasDisplay(canvasPrevious);
-			break;
+        case EventPointerUp:
+            UILibWidgetDeselect(self);
+            UILibCanvasDisplay(canvasPrevious);
+            break;
 
-		case EventPointerLeave:
-			event->claimed = event->y < self->y;
-			break;
-	}
+        case EventPointerLeave:
+            event->claimed = event->y < self->y;
+            break;
+    }
 }
 
 static void handlerCanvas (Widget *self, Event *event)
@@ -133,21 +133,21 @@ void MenuShowCanvas (bool mpgMode)
 {
     modeMPG = mpgMode;
 
-	if(!canvasConfig) {
+    if(!canvasConfig) {
 
-	    Widget *btn;
+        Widget *btn;
 
-		canvasConfig = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
+        canvasConfig = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
 
-		UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 40, "Exit", handlerExit), 250);
-	    btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 65, "Threading", handlerThreading), 250);
+        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 40, "Exit", handlerExit), 250);
+        btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 65, "Threading", handlerThreading), 250);
         btn->privateData = (void *)1;
-	    btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 90, "grbl Utilities", handlerUtilities), 250);
+        btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 90, "grbl Utilities", handlerUtilities), 250);
         btn->privateData = (void *)1;
-	    UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 115, "Configure", handlerConfig), 250);
-	}
+        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 115, "Configure", handlerConfig), 250);
+    }
 
-	canvasPrevious = UILibCanvasGetCurrent();
+    canvasPrevious = UILibCanvasGetCurrent();
 
-	UILibCanvasDisplay(canvasConfig);
+    UILibCanvasDisplay(canvasConfig);
 }

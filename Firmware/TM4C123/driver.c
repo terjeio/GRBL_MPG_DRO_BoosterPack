@@ -36,6 +36,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include "src/config.h"
 #include "src/interface.h"
 #include "src/keypad.h"
 
@@ -120,7 +121,6 @@ void hal_init (void)
     QEIIntEnable(QEI1_BASE, QEI_INTTIMER);
 
     mpg_reset();
-
 
     GPIOPinTypeGPIOInput(KEYINTR_PORT, KEYINTR_PIN);
     GPIOPadConfigSet(KEYINTR_PORT, KEYINTR_PIN, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
@@ -253,7 +253,7 @@ void signal_setMPGMode (bool on)
 
     // If last mode change request was not honoured then output a 1us pulse to reset
     // grbl interrupt that may have become out of sync.
-    if((GPIOPinRead(MPG_MODE_PORT, MPG_MODE_PIN) == 0) == on) {
+    if(!!GPIOPinRead(MPG_MODE_PORT, MPG_MODE_PIN) == on) {
         GPIOPinWrite(MPG_MODE_PORT, MPG_MODE_PIN, on ? MPG_MODE_PIN : 0);
         _delay_cycles(80); // 1us on a 80MHz MCU
     }
@@ -263,7 +263,11 @@ void signal_setMPGMode (bool on)
 
 bool signal_getMPGMode (void)
 {
-    return false; //GPIOPinRead(MPG_MODE_PORT, MPG_MODE_PIN) == 0;
+#ifdef UART_MODE
+    return false;
+#else
+    return !GPIOPinRead(MPG_MODE_PORT, MPG_MODE_PIN);
+#endif
 }
 
 void mpg_setActiveAxis (uint_fast8_t axis)
@@ -452,7 +456,6 @@ static void navigator_int_handler (void)
 
 
 // Keypad
-
 
 static void keyclick_int_handler (void)
 {

@@ -1,5 +1,13 @@
 ## GRBL MPG & DRO BoosterPack for Tiva C \(TM4C123G\)
 
+__2022-01-13:__ Added wiring diagram for default key and LED map.
+
+[Default wiring diagram (pdf)](media/Default%20keypad%20and%20LED%20wiring.pdf).  
+
+The latest keypad code allows adding new keymappings at run time, switching between a few predefined ones or creating a new from scratch.
+
+__2022-01-10:__ First preliminary version with Pi Pico support committed. Tiva C \(TM4C123\) version updated for new HAL/APIs.
+
 __2021-08-30: Pi Pico breakout board design__
 
 First batch of boards \(for final design verification\) to be ordered soon.
