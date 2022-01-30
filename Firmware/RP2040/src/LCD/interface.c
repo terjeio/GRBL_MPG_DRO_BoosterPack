@@ -14,6 +14,7 @@ __attribute__((weak)) uint16_t lcd_readID (void) { return 0; }
 // Hardware interface
 __attribute__((weak)) void lcd_driverInit (lcd_driver_t *driver) {}
 __attribute__((weak)) void lcd_delayms (uint16_t ms) {}
+__attribute__((weak)) uint32_t lcd_systicks (void) { return 0; }
 __attribute__((weak)) void lcd_writeData (uint8_t data) {}
 __attribute__((weak)) void lcd_writePixel (colorRGB565 color, uint32_t count) {}
 __attribute__((weak)) void lcd_writePixels (uint16_t *pixels, uint32_t length) {}

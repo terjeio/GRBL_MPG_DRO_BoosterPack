@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.2 / 2022-01-05 / (c) Io Engineering / Terje
+ * v0.0.3 / 2022-01-28 / (c) Io Engineering / Terje
  */
 
 /*
@@ -45,6 +45,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdbool.h>
 #include <math.h>
 
+#include "LCD/graphics.h"
 #include "grblcomm.h"
 
 #define SERIAL_NO_DATA -1
@@ -81,7 +82,6 @@ const RGBColor_t grblStateColor[NUMSTATES] = {
 };
 
 static grbl_data_t grbl_data = {
-    .device           = "grblHAL MPG & DRO",
     .changed          = (uint32_t)-1,
     .position         = {0.0f, 0.0f, 0.0f},
     .offset           = {0.0f, 0.0f, 0.0f},
@@ -106,10 +106,46 @@ static grbl_data_t grbl_data = {
     .coolant.flood    = false
 };
 
-static bool flush = false, legacy_rt_commands = true;
-static volatile bool await = false;
-static void (*grblReceiveCallback)(char *string) = 0;
+static void parseData (char *block);
+
+settings_t settings = {
+    .spindle.rpm     = 0.0f,
+    .spindle.mpg_rpm = 200.0f,
+    .spindle.rpm_min = 0.0f,
+    .spindle.rpm_max = 1000.0f,
+    .jog_config.step_speed    = 100.0f,
+    .jog_config.slow_speed    = 600.0f,
+    .jog_config.fast_speed    = 3000.0f,
+    .jog_config.step_distance = 0.1f,
+    .jog_config.slow_distance = 500.0f,
+    .jog_config.fast_distance = 500.0f
+};
+
+static grbl_info_t grbl_info = {
+    .options = {0},
+    .device  = "grblHAL MPG & DRO",
+};
+
+static struct {
+    grbl_settings_received_ptr on_settings_received;
+    grbl_info_received_ptr on_info_received;
+    grbl_callback_ptr on_report_received;
+    grbl_sd_files_received_ptr on_sd_files_received;
+    grbl_callback_ptr on_line_received;
+} grbl_event = {
+    .on_settings_received = NULL,
+    .on_info_received = NULL,
+    .on_report_received = NULL,
+    .on_sd_files_received = NULL,
+    .on_line_received = parseData
+};
+
+static sd_files_t sd_files = {0};
+
+static bool legacy_rt_commands = true;
+static volatile bool ack_received = false, await = false;
 static void (*grblTransmitCallback)(bool ok, grbl_data_t *grbl_data) = 0;
+grbl_settings_received_ptr on_settings_received = NULL;
 
 void setGrblLegacyMode (bool on)
 {
@@ -136,15 +172,20 @@ char mapRTC2Legacy (char c)
     return c;
 }
 
-grbl_data_t *setGrblReceiveCallback (void (*fn)(char *line))
+grbl_data_t *setGrblReceiveCallback (grbl_callback_ptr fn)
 {
-    grblReceiveCallback = fn;
-    grblTransmitCallback = 0;
+    grbl_event.on_report_received = fn;
+    grblTransmitCallback = NULL;
     grbl_data.changed.flags = (uint32_t)-1;
-    grbl_data.changed.reset = false;
+    grbl_data.changed.await_ack = grbl_data.changed.reset = false;
     grbl_data.changed.unassigned = 0;
 
     return &grbl_data;
+}
+
+bool grblIsMPGActive (void)
+{
+    return grbl_data.mpgMode;
 }
 
 static void processReply (char *line)
@@ -155,12 +196,12 @@ static void processReply (char *line)
 void setGrblTransmitCallback (void (*fn)(bool ok, grbl_data_t *grbl_data))
 {
     grblTransmitCallback = fn;
-    grblReceiveCallback = fn ? processReply : 0;
+    grbl_event.on_report_received = fn ? processReply : NULL;
 }
 
 void grblSerialFlush (void)
 {
-    flush = true;
+    serial_RxCancel();
 }
 
 static bool parseDecimal (float *value, char *data)
@@ -293,6 +334,17 @@ static void parseData (char *block)
     bool pins = true;
     char *line = &buf[0];
 
+    if((ack_received = !strcmp(block, "ok"))) {
+        grbl_data.changed.await_ack = false;
+        grblClearError(); // TODO: grbl needs to be fixed for continuing to process from input buffer after error...
+        if(grbl_data.alarm)
+            grblClearAlarm();
+        return;
+    }
+
+    if(block[0] == '<' || block[0] =='[') // strip last character from long messages
+        block[strlen(block) - 1] = '\0';
+
     strncpy(line, block, MAX_BLOCK_LENGTH);
     line[MAX_BLOCK_LENGTH - 1] = '\0';
 
@@ -386,7 +438,11 @@ static void parseData (char *block)
                 if(grbl_data.mpgMode != (line[4] == '1')) {
                     grbl_data.mpgMode = !grbl_data.mpgMode;
                     grbl_data.changed.mpg = true;
+                    grbl_event.on_line_received = parseData;
                 }
+            } else if(!strncmp(line, "SD:", 3)) {
+                if((grbl_data.changed.message = !!strcmp(grbl_data.message, line + 3)))
+                    strncpy(grbl_data.message, line + 3, 250);
             }
 
             line = strtok(NULL, "|");
@@ -467,13 +523,6 @@ static void parseData (char *block)
         } else if(!strncmp(line, "MSG:", 4)) {
             grbl_data.changed.message = true;
             strncpy(grbl_data.message, line + 4, 250);
-        } else if(!strncmp(line, "VER:", 4)) {
-            line = strchr(line + 4, ':');
-            if(line && (++line)[0] != '\0') {
-                grbl_data.changed.device = true;
-                strncpy(grbl_data.device, line, MAX_STORED_LINE_LENGTH);
-                grbl_data.device[MAX_STORED_LINE_LENGTH - 1] = '\0';
-            }
         }
     } else if(!strncmp(line, "error:", 6)) {
         grbl_data.error = (uint8_t)atoi(line + 6);
@@ -486,38 +535,11 @@ static void parseData (char *block)
         grblClearError();
         grblClearAlarm();
         grblClearMessage();
-    } else if(!strcmp(line, "ok")) {
-        grblClearError(); // TODO: grbl needs to be fixed for continuing to process from input buffer after error...
-        if(grbl_data.alarm)
-            grblClearAlarm();
+        grbl_event.on_line_received = parseData;
     }
-}
 
-void grblPollSerial (void)
-{
-    static int_fast16_t c;
-    static uint_fast16_t char_counter = 0;
-
-    if((c = serial_getC()) != SERIAL_NO_DATA) {
-
-        if(((c == '\n') || (c == '\r'))) { // End of block reached
-
-            if(char_counter > 0) {
-
-                grbl_data.block[grbl_data.block[0] == '<' || grbl_data.block[0] =='[' ? char_counter - 1 : char_counter] = '\0'; // strip last character from long messages
-
-                parseData(grbl_data.block);
-
-                if(grblReceiveCallback && !flush) {
-                    flush = false;
-                    grblReceiveCallback(grbl_data.block);
-                }
-
-                char_counter = 0;
-            }
-        } else if(char_counter < MAX_BLOCK_LENGTH - 1)
-            grbl_data.block[char_counter++] = (char)c;
-    }
+    if(grbl_event.on_report_received && !grbl_data.changed.await_ack)
+        grbl_event.on_report_received(grbl_data.block);
 }
 
 void grblClearAlarm (void)
@@ -576,4 +598,244 @@ bool grblParseState (char *data, grbl_t *grbl)
     }
 
     return changed;
+}
+
+static void parse_info (char *line)
+{
+    if(!strcmp(line, "ok")) {
+        grbl_event.on_line_received = parseData;
+        if(grbl_event.on_info_received) {
+            grbl_event.on_info_received(&grbl_info);
+            grbl_event.on_info_received = NULL;
+        }
+    } else if(!strncmp(line, "[VER:", 5)) {
+        grbl_info.is_loaded = true;
+        if((line = strchr(line + 5, ':')))
+            line[strlen(line) - 1] = '\0';
+        if(line && (++line)[0] != '\0') {
+            strncpy(grbl_info.device, line, MAX_STORED_LINE_LENGTH - 1);
+            grbl_info.device[MAX_STORED_LINE_LENGTH - 1] = '\0';
+        }
+    } else if(!strncmp(line, "[NEWOPT:", 8)) {
+
+        line[strlen(line) - 1] = '\0';
+        line = strtok(&line[8], ",");
+
+        while(line) {
+
+            if(!strncmp(line, "SD", 2))
+                grbl_info.options.sd_card = true;
+            else if(!strncmp(line, "TC", 2))
+                grbl_info.options.tool_change = true;
+
+            line = strtok(NULL, ",");
+        }
+    } else
+        parseData(line);
+}
+
+void grblGetInfo (grbl_info_received_ptr on_info_received)
+{
+    if(grbl_data.mpgMode && grbl_event.on_line_received == parseData) {
+        grbl_event.on_info_received = on_info_received;
+        grbl_event.on_line_received = parse_info;
+        serial_RxCancel();
+        serial_writeLn("$I");
+    } else if (on_info_received)
+        on_info_received(&grbl_info); // return default values
+}
+
+grbl_options_t grblGetOptions (void)
+{
+    return grbl_info.options;
+}
+
+static void parse_settings (char *line)
+{
+    static uint_fast16_t setting = 0;
+
+    if(!strcmp(line, "ok")) {
+        grbl_event.on_line_received = parseData;
+        settings.is_loaded = setting > 0;
+        if(grbl_event.on_settings_received) {
+            grbl_event.on_settings_received(&settings);
+            grbl_event.on_settings_received = NULL;
+        }
+    } else if(line[0] == '$' && strchr(line, '=')) {
+
+        line = strtok(&line[1], "=");
+        setting = atoi(line);
+        line = strtok(NULL, "=");
+        float value = atof(line);
+
+        switch((setting_type_t)setting) {
+
+            case Setting_JogStepSpeed:
+                settings.jog_config.step_speed = value;
+                break;
+
+            case Setting_JogSlowSpeed:
+                settings.jog_config.slow_speed = value;
+                break;
+
+            case Setting_JogFastSpeed:
+                settings.jog_config.fast_speed = value;
+                break;
+
+            case Setting_JogStepDistance:
+                settings.jog_config.step_distance = value;
+                break;
+
+            case Setting_JogSlowDistance:
+                settings.jog_config.slow_distance = value;
+                break;
+
+            case Setting_JogFastDistance:
+                settings.jog_config.fast_distance = value;
+                break;
+
+            case Setting_RpmMin:
+                settings.spindle.rpm_min = value;
+                break;
+
+            case Setting_RpmMax:
+                settings.spindle.rpm_max = value;
+                break;
+
+            case Setting_EnableLegacyRTCommands:
+                setGrblLegacyMode((uint32_t)value != 0);
+                break;
+
+            case Setting_HomingEnable:
+                settings.homing_enabled = ((uint32_t)value & 0x01) != 0;
+                break;
+
+            case Setting_LaserMode:
+                settings.mode = (uint32_t)value;
+                break;
+
+            default:
+                break;
+        }
+    } else
+        parseData(line);
+}
+
+void grblGetSettings (grbl_settings_received_ptr on_settings_received)
+{
+    if(grbl_data.mpgMode && grbl_event.on_line_received == parseData) {
+        grbl_event.on_settings_received = on_settings_received;
+        grbl_event.on_line_received = parse_settings;
+        serial_RxCancel();
+        serial_writeLn("$$");
+    } else if (on_settings_received)
+        on_settings_received(&settings); // return default values
+}
+
+static void parse_sd_files (char *line)
+{
+    if(!strcmp(line, "ok")) {
+        grbl_event.on_line_received = parseData;
+        if(grbl_event.on_sd_files_received) {
+            grbl_event.on_sd_files_received(&sd_files);
+            grbl_event.on_sd_files_received = NULL;
+        }
+    } else if(!strncmp(line, "[FILE:", 6)) {
+
+        sd_file_t *file, *next = sd_files.files;
+        
+        if((file = (sd_file_t *)malloc(sizeof(sd_file_t)))) {
+        
+            char *size;
+            
+            line += 6;
+            if((size = strstr(line, "|SIZE:"))) {
+                *size = '\0';
+                size += 6;
+            }
+
+            strcpy(file->name, line);
+            file->next = NULL;
+
+            if(size && ((line = strchr(size, '|')) || (line = strchr(size, ']')))) {
+                *line = '\0';
+                file->length = (uint32_t)atoi(size);
+            } else
+                file->length = 0;
+
+            if(sd_files.files == NULL)
+                sd_files.files = file;
+            else {
+                while(next->next)
+                    next = next->next;
+                next->next= file;    
+            }
+            sd_files.num_files++;
+        }    
+    } else
+        parseData(line);
+}
+
+void grblGetSDFiles (grbl_sd_files_received_ptr on_sd_files_received)
+{
+    if(grbl_data.mpgMode && grbl_info.options.sd_card && grbl_event.on_line_received == parseData) {
+        sd_file_t *file ;
+        while(sd_files.files) {
+            file = sd_files.files->next;
+            free(sd_files.files);
+            sd_files.files = file;
+        }
+        sd_files.num_files = 0;
+        grbl_event.on_sd_files_received = on_sd_files_received;
+        grbl_event.on_line_received = parse_sd_files;
+        serial_RxCancel();
+        serial_writeLn("$F");
+    } else if (on_settings_received)
+        on_sd_files_received(&sd_files); // return default values
+}
+
+static void await_ack (char *line)
+{
+    ack_received = !strcmp(line, "ok");
+}
+
+bool grblAwaitACK (const char *command, uint_fast16_t timeout_ms)
+{
+    ack_received = false;
+    grbl_data.changed.await_ack = true;
+//    grbl_event.on_line_received = await_ack;
+    serial_RxCancel();
+    serial_writeLn(command);
+
+    timeout_ms += lcd_systicks();
+    while(!ack_received && lcd_systicks() <= timeout_ms)
+        grblPollSerial();
+
+    grbl_data.changed.await_ack = false;
+//    grbl_event.on_line_received = parseData;
+
+    return ack_received;
+}
+
+void grblPollSerial (void)
+{
+    static int_fast16_t c;
+    static uint_fast16_t char_counter = 0;
+
+    while((c = serial_getC()) != SERIAL_NO_DATA) {
+
+        if(c == 0x18) //ASCII_CAN
+            char_counter = 0;
+        else if(((c == '\n') || (c == '\r'))) { // End of line reached
+
+            grbl_data.block[char_counter] = '\0';
+            
+            if(char_counter > 0)
+                 grbl_event.on_line_received(grbl_data.block);
+
+            char_counter = 0;
+
+        } else if(char_counter < MAX_BLOCK_LENGTH - 1)
+            grbl_data.block[char_counter++] = (char)c;
+    }
 }

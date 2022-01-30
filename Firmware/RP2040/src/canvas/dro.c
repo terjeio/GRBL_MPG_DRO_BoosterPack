@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v1.0.10 / 2022-01-07 / (c)Io Engineering / Terje
+ * v1.0.11 / 2022-01-28 / (c)Io Engineering / Terje
  */
 
 /*
@@ -49,6 +49,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../UILib/uilib.h"
 #include "../fonts.h"
 #include "../fonts/arial_48x55.h"
+#include "../config.h"
 #include "../grblcomm.h"
 #include "../keypad.h"
 #include "../interface.h"
@@ -92,26 +93,10 @@ typedef struct {
 } axis_data_t;
 
 typedef struct {
-    float fast_speed;
-    float slow_speed;
-    float step_speed;
-    float fast_distance;
-    float slow_distance;
-    float step_distance;
-} jog_config_t;
-
-typedef struct {
     uint_fast16_t dro_refresh;
     uint_fast16_t mpg_refresh;
     uint_fast16_t signal_reset;
 } event_counters_t;
-
-typedef struct {
-    float rpm;
-    float mpg_rpm;
-    float rpm_min;
-    float rpm_max;
-} spindle_state_t;
 
 //
 
@@ -122,34 +107,25 @@ const float mpgFactors[2] = {1.0f, 10.0f};
 
 volatile uint_fast8_t event = 0;
 static uint_fast8_t mpg_axis = X_AXIS;
+static float mpg_rpm = 200.0f;
 static bool mpgMove = false, endMove = false;
-static bool jogging = false, keyreleased = true, disableMPG = false, mpgReset = false, settingsOK = false, active = false;
-static bool isLathe = false, homingEnabled = false;
+static bool jogging = false, keyreleased = true, disableMPG = false, mpgReset = false, active = false;
+static bool isLathe = false;
 static float angle = 0.0f;
-static char request[10] = {0};
 static uint32_t nav_midpos = 0;
-static axis_data_t axis[3] = {
-    { .label = "X:"},
-    { .label = "Y:"},
-    { .label = "Z:"}
-};
 static jogmode_t jogMode = JogMode_Slow;
 static event_counters_t event_count;
 static grbl_data_t *grbl_data = NULL;
 static Canvas *canvasMain = 0;
 static Label *lblDevice, *lblResponseL = NULL, *lblResponseR = NULL, *lblGrblState = NULL, *lblPinState = NULL, *lblFeedRate = NULL, *lblRPM = NULL, *lblJogMode = NULL;
-
 static lcd_display_t *screen;
-
-static jog_config_t jog_config = {
-    .step_speed    = 100.0f,
-    .slow_speed    = 600.0f,
-    .fast_speed    = 3000.0f,
-    .step_distance = 0.1f,
-    .slow_distance = 500.0f,
-    .fast_distance = 500.0f
+static settings_t *settings = NULL;
+static grbl_info_t *grbl_info = NULL;
+static axis_data_t axis[3] = {
+    { .label = "X:"},
+    { .label = "Y:"},
+    { .label = "Z:"}
 };
-
 static event_counters_t event_interval = {
     .dro_refresh  = 20,
     .mpg_refresh  = 10,
@@ -159,13 +135,9 @@ static event_counters_t event_interval = {
 static leds_t leds = {
     .value = 0
 };
-
-static spindle_state_t spindle_state = {
-    .rpm     = 0.0f,
-    .mpg_rpm = 200.0f,
-    .rpm_min = 0.0f,
-    .rpm_max = 1000.0f
-};
+#ifdef UART_MODE
+static bool jogModePending = false;
+#endif
 
 static void displayGrblData (char *line);
 
@@ -307,7 +279,7 @@ static bool MPG_Move (void)
 static void displayBanner (RGBColor_t color)
 {
     lblDevice->widget.fgColor = color;
-    UILibLabelDisplay(lblDevice, grbl_data->device);
+    UILibLabelDisplay(lblDevice, grbl_info->device);
 }
 
 static void displayPosition (uint_fast8_t i)
@@ -346,7 +318,7 @@ static void displayJogMode (jogmode_t jogMode)
     UILibLabelDisplay(lblJogMode, jogModeStr[jogMode]);
 }
 
-static void displayXMode (char *mode)
+static void displayXMode (const char *mode)
 {
     setColor(mode[0] == '?' ? Red : LawnGreen);
     drawString(font_23x16, 269, axis[X_AXIS].row - 32, mode, true);
@@ -431,12 +403,12 @@ static void processKeypress (void)
                     bool spindle_on = !grbl_data->spindle.on;
                     if(spindle_on) {
                         grbl_data->spindle.ccw = signal_getSpindleDir();
-                        if(spindle_state.mpg_rpm == 0)
-                            spindle_state.mpg_rpm = 400;
+                        if(mpg_rpm == 0)
+                            mpg_rpm = 400.0f;
                     }
                     strcpy(command, spindle_on ? (grbl_data->spindle.ccw ? "M4" : "M3") : "M5");
                     if(spindle_on)
-                        sprintf(append(command), "S%d", (int32_t)spindle_state.mpg_rpm);
+                        sprintf(append(command), "S%d", (int32_t)mpg_rpm);
                     serial_writeLn((char *)command);
                     command[0] = '\0';
                 } else if(grbl_data->grbl.state == Hold || grbl_data->grbl.state == Door)
@@ -462,7 +434,7 @@ static void processKeypress (void)
         case 'g':                                   // Lock Y-axis DRO for manual MPG sync
             if(grbl_data->mpgMode && grbl_data->grbl.state == Idle) {
                 if(!(axis[Y_AXIS].dro_lock = !axis[Y_AXIS].dro_lock))
-                    axis[Y_AXIS].mpg_position = mpg_getPosition()->x.position;
+                    axis[Y_AXIS].mpg_position = mpg_getPosition()->y.position;
                 displayPosition(Y_AXIS);
             }
             break;
@@ -556,6 +528,7 @@ static void processKeypress (void)
             serial_putC(CMD_OVERRIDE_SPINDLE_COARSE_MINUS);
             break;
 
+        case CMD_STOP:
         case CMD_SAFETY_DOOR:
         case CMD_OPTIONAL_STOP_TOGGLE:
         case CMD_SINGLE_BLOCK_TOGGLE:
@@ -580,7 +553,7 @@ static void processKeypress (void)
             break;
 
         case 'H':                                   // Home axes
-            if(homingEnabled) {
+            if(settings && settings->homing_enabled) {
                 signal_setLimitsOverride(false);
                 strcpy(command, "$H");
             }
@@ -650,18 +623,18 @@ static void processKeypress (void)
             switch(jogMode) {
 
             case JogMode_Slow:
-                strrepl(command, '?', ftoa(jog_config.slow_distance, "%5.0f"));
-                strcat(command, ftoa(jog_config.slow_speed, "%5.0f"));
+                strrepl(command, '?', ftoa(settings->jog_config.slow_distance, "%5.0f"));
+                strcat(command, ftoa(settings->jog_config.slow_speed, "%5.0f"));
                 break;
 
             case JogMode_Step:
-                strrepl(command, '?', ftoa(jog_config.step_distance, "%5.3f"));
-                strcat(command, ftoa(jog_config.step_speed, "%5.0f"));
+                strrepl(command, '?', ftoa(settings->jog_config.step_distance, "%5.3f"));
+                strcat(command, ftoa(settings->jog_config.step_speed, "%5.0f"));
                 break;
 
             default:
-                strrepl(command, '?', ftoa(jog_config.fast_distance, "%5.0f"));
-                strcat(command, ftoa(jog_config.fast_speed, "%5.0f"));
+                strrepl(command, '?', ftoa(settings->jog_config.fast_distance, "%5.0f"));
+                strcat(command, ftoa(settings->jog_config.fast_speed, "%5.0f"));
                 break;
 
         }
@@ -689,82 +662,37 @@ void jogModeChanged (jogmode_t mode)
 {
     jogMode = mode;
     event |= EVENT_JOGMODECHANGED;
+#ifdef UART_MODE
+    jogModePending = grbl_data->mpgMode;
+#endif
 }
 
-void parseSettings (char *line)
+static void on_settings_received (settings_t *setn)
 {
-    uint_fast16_t setting;
-    float value;
+    settings = setn;
 
-    if(!strcmp(line, "ok") || grbl_data->changed.reset || !grbl_data->mpgMode) {
-        setGrblReceiveCallback(displayGrblData);
-        if(settingsOK && request[0] != '\0') {
-            serial_writeLn(request);
-            request[0] = '\0';
-        }
-    } else if(line[0] == '$' && strchr(line, '=')) {
+    if(settings->is_loaded) {
 
-        line = strtok(&line[1], "=");
-        setting = atoi(line);
-        line = strtok(NULL, "=");
-        value = atof(line);
-        settingsOK = setting > 100;
-
-        switch((setting_type_t)setting) {
-
-            case Setting_JogStepSpeed:
-                jog_config.step_speed = value;
-                break;
-
-            case Setting_JogSlowSpeed:
-                jog_config.slow_speed = value;
-                break;
-
-            case Setting_JogFastSpeed:
-                jog_config.fast_speed = value;
-                break;
-
-            case Setting_JogStepDistance:
-                jog_config.step_distance = value;
-                break;
-
-            case Setting_JogSlowDistance:
-                jog_config.slow_distance = value;
-                break;
-
-            case Setting_JogFastDistance:
-                jog_config.fast_distance = value;
-                break;
-
-            case Setting_RpmMin:
-                spindle_state.rpm_min = value;
-                break;
-
-            case Setting_RpmMax:
-                spindle_state.rpm_max = value;
-                break;
-
-            case Setting_EnableLegacyRTCommands:
-                setGrblLegacyMode((uint32_t)value != 0);
-                break;
-
-            case Setting_HomingEnable:
-                homingEnabled = ((uint32_t)value & 0x01) != 0;
-                break;
-
-            case Setting_LaserMode:
-                if((isLathe = value == 2)) {
-                    axis[Y_AXIS].visible = false;
-                    axis[Z_AXIS].row = YROW;
-                    axis[Z_AXIS].visible = true;
-                    displayXMode("?");
-                }
-                break;
-
-            default:
-                break;
+        if((settings->mode == 2)) {
+            axis[Y_AXIS].visible = false;
+            axis[Z_AXIS].row = YROW;
+            axis[Z_AXIS].visible = true;
+            displayXMode("?");
         }
     }
+
+    displayBanner(grbl_data->mpgMode ? (settings->is_loaded ? Blue : Red) : White);
+
+//    if(grbl_data->mpgMode) // Get parser state
+//        serial_writeLn("$G");
+}
+
+static void on_info_received (grbl_info_t *info)
+{
+    grbl_info = info;
+
+    if(settings == NULL || !settings->is_loaded)
+        grblGetSettings(on_settings_received);
 }
 
 static void displayGrblData (char *line)
@@ -777,7 +705,7 @@ static void displayGrblData (char *line)
     if(grbl_data->changed.flags) {
 
         if(grbl_data->changed.reset)
-            settingsOK = false;
+            settings->is_loaded = false;
 
         if(grbl_data->changed.state) {
             lblGrblState->widget.fgColor = grbl_data->grbl.state_color;
@@ -797,7 +725,7 @@ static void displayGrblData (char *line)
                     break;
 
                 case Alarm: // Switch to MPG mode if alarm #11 issued (homing required)
-                    if(grbl_data->grbl.substate == 11 && !settingsOK && !grbl_data->mpgMode)
+                    if(grbl_data->grbl.substate == 11 && !settings->is_loaded && !grbl_data->mpgMode)
                         signal_setMPGMode(true); // default is MPG on
                     break;
             }
@@ -851,7 +779,8 @@ static void displayGrblData (char *line)
                 signal_setMPGMode(grbl_data->mpgMode);
             keypad_forward(!grbl_data->mpgMode);
             if(grbl_data->mpgMode) {
-                strcpy(request, settingsOK ? "$G" : "$I\r\n$G");
+                if(grbl_info->is_loaded)
+                    grblAwaitACK("$G", 50);
                 MPG_ResetPosition(true);
                 displayMPGFactor(X_AXIS, axis[X_AXIS].mpg_idx);
                 displayMPGFactor(Y_AXIS, axis[Y_AXIS].mpg_idx);
@@ -864,11 +793,18 @@ static void displayGrblData (char *line)
                         displayPosition(c);
                     }
                     setMPGFactorBG(c, Black);
-                } while(c);
+                } while(c);                
+#ifdef UART_MODE
+                if(jogModePending) {
+                    jogModePending = false;
+                    serial_putC('0' + (char)jogMode);
+                }
+#endif
             }
-            grbl_data->changed.device = true;
+
             leds.mode = grbl_data->mpgMode;
             leds_setState(leds);
+            displayBanner(grbl_data->mpgMode ? (settings->is_loaded ? Blue : Red) : White);
         }
 
         if(grbl_data->changed.feed) {
@@ -879,9 +815,9 @@ static void displayGrblData (char *line)
         if(grbl_data->changed.rpm) {
             bool display_actual = grbl_data->spindle.on && grbl_data->spindle.rpm_actual > 0.0f;
             if(grbl_data->spindle.rpm_programmed > 0.0f)
-                spindle_state.mpg_rpm = (uint32_t)grbl_data->spindle.rpm_programmed;
+                mpg_rpm = grbl_data->spindle.rpm_programmed;
             if(display_actual || leds.spindle != grbl_data->spindle.on) {
-                sprintf(line, "%6.1f", display_actual ? grbl_data->spindle.rpm_actual : spindle_state.mpg_rpm);
+                sprintf(line, "%6.1f", display_actual ? grbl_data->spindle.rpm_actual : mpg_rpm);
                 lblRPM->widget.fgColor = display_actual ? (grbl_data->spindle.rpm_actual > 2000.0f ? Coral : White) : Coral;
                 UILibLabelDisplay(lblRPM, line);
             }
@@ -900,20 +836,15 @@ static void displayGrblData (char *line)
         if(grbl_data->changed.xmode && isLathe)
             displayXMode(grbl_data->xModeDiameter ? "D" : "R");
 
-        if(grbl_data->changed.device)
-            displayBanner(grbl_data->mpgMode ? (settingsOK ? Blue : Red) : White);
+        if(grbl_data->changed.await_wco_ok)
+            MPG_ResetPosition(false);
 
         grbl_data->changed.flags = 0;
     }
 
     if(grbl_data->mpgMode) {
-        if(!settingsOK) {
-            setGrblReceiveCallback(parseSettings);
-            serial_writeLn("$$");
-        } else if(request[0] != '\0') {
-            serial_writeLn(request);
-            request[0] = '\0';
-        }
+        if(grbl_info == NULL || !grbl_info->is_loaded)
+           grblGetInfo(on_info_received);
     }
 }
 
@@ -960,7 +891,7 @@ void DROProcessEvents (void)
 
         if(event & EVENT_DRO) {
             event &= ~EVENT_DRO;
-            if(!mpgMove)
+            if(!mpgMove && settings->is_loaded)
                 serial_putC(grbl_data->awaitWCO ? CMD_STATUS_REPORT_ALL : mapRTC2Legacy(CMD_STATUS_REPORT)); // Request realtime status from grbl
         }
 
@@ -1020,17 +951,17 @@ static void canvasHandler (Widget *self, Event *uievent)
                         rpm = 5.0f;
                     else if(rpm < -5.0f)
                         rpm = -5.0f;
-                    rpm = spindle_state.mpg_rpm + rpm * 8.0f;
-                    if(rpm < 0.0f || rpm < spindle_state.rpm_min)
-                        rpm = spindle_state.rpm_min;
-                    else if (rpm > spindle_state.rpm_max)
-                        rpm = spindle_state.rpm_max;
-                    spindle_state.mpg_rpm = rpm;
+                    rpm = mpg_rpm + rpm * 8.0f;
+                    if(rpm < 0.0f || rpm < settings->spindle.rpm_min)
+                        rpm = settings->spindle.rpm_min;
+                    else if (rpm > settings->spindle.rpm_max)
+                        rpm = settings->spindle.rpm_max;
+                    mpg_rpm = rpm;
                     if(grbl_data->spindle.on) {
-                        sprintf(command, "S%d", (int32_t)spindle_state.mpg_rpm);
+                        sprintf(command, "S%d", (int32_t)mpg_rpm);
                         serial_writeLn((char *)command);
                     }
-                    sprintf(command, "%6.1f", spindle_state.mpg_rpm);
+                    sprintf(command, "%6.1f", mpg_rpm);
                     lblRPM->widget.fgColor = Coral;
                     UILibLabelDisplay(lblRPM, command);
                 } else if(isReady) {
@@ -1079,7 +1010,7 @@ static void canvasHandler (Widget *self, Event *uievent)
                 }
             }
             drawString(font_freepixel_17x34, 5, RPMROW, "RPM:", false);
-            sprintf(rpm, "%6.1f", spindle_state.mpg_rpm);
+            sprintf(rpm, "%6.1f", mpg_rpm);
             lblRPM->widget.fgColor = Coral;
             UILibLabelDisplay(lblRPM, rpm);
             drawString(font_23x16, 220, RPMROW - 3, "Jog:", false);
@@ -1192,6 +1123,9 @@ void DROShowCanvas (lcd_display_t *lcd_screen)
 
     if(grbl_data)
         signal_setMPGMode(grbl_data->mpgMode);
+
+    if(grbl_info == NULL)
+        grblGetInfo(on_info_received);
 
     leds_setState(leds);
 

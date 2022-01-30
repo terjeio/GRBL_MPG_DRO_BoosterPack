@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.4 / 2021-03-03 / (c) Io Engineering / Terje
+ * v0.0.5 / 2022-01-28 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2021, Terje Io
+Copyright (c) 2018-20212, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -81,8 +81,8 @@ typedef struct {
 typedef union {
     uint8_t value;
     struct {
-        uint8_t led1: 1,
-                led0: 1,
+        uint8_t led0: 1,
+                led1: 1,
                 led2: 1,
                 led3: 1,
                 led4: 1,
@@ -91,8 +91,8 @@ typedef union {
                 led7: 1;
     };
     struct {
-        uint8_t run:     1,
-                mode:    1,
+        uint8_t mode:    1,
+                run:     1,
                 hold:    1,
                 spindle: 1,
                 flood:   1,

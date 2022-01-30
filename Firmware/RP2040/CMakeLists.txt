@@ -18,6 +18,7 @@ add_executable(grblDRO
  src/canvas/dro.c
  src/canvas/grblutils.c
  src/canvas/menu.c
+ src/canvas/sdcard.c
  src/canvas/sender.c
  src/canvas/threading.c)
 

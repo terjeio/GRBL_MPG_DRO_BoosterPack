@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.2 / 2022-01-03 / (c) Io Engineering / Terje
+ * v0.0.23 / 2022-01-28 / (c) Io Engineering / Terje
  */
 
 /*
@@ -48,6 +48,7 @@ __attribute__((weak)) int16_t serial_getC (void) { return -1; }
 __attribute__((weak)) void serial_writeS (void) {}
 __attribute__((weak)) void serial_writeLn (const char *data) {}
 __attribute__((weak)) bool serial_putC (const char c) { return false; }
+__attribute__((weak)) void serial_RxCancel (void);
 
 __attribute__((weak)) bool keypad_isKeydown (void) { return false; }
 __attribute__((weak)) void keypad_setFwd (bool on) {};

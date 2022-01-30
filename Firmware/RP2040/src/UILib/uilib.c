@@ -1,11 +1,11 @@
 /*
  * uilib.c - User Interface Library
  *
- * v1.0.7 / 2021-03-03/ (c) Io Engineering / Terje
+ * v1.0.8 / 2022-01-29 / (c) Io Engineering / Terje
  *
  */
 
- /* Copyright (c) 2015-2021, Io Engineering
+ /* Copyright (c) 2015-2022, Io Engineering
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -211,7 +211,7 @@ static void buttonPaint (Button *button, bool force)
         setColor(color);
         fillRect(button->widget.x + 1, button->widget.y + 1, button->widget.xMax - 1 , button->widget.yMax - 1);
         setColor(button->widget.fgColor);
-        drawString(buttonFont, button->labelx, button->labely - 2, button->label, false);
+        drawString(button->font, button->labelx, button->labely - 2, button->label, false);
         if(!button->widget.flags.noBox)
             drawRect(button->widget.x, button->widget.y, button->widget.xMax, button->widget.yMax);
         button->curColor = color;
@@ -958,9 +958,23 @@ void UILibButtonFlash (Button *button)
 void UILibButtonSetLabel (Button *button, const char *label)
 {
     if(label) {
-        button->label  = (char *)label;
-        button->labelx = button->widget.x + (button->widget.flags.alignment == Align_Left ? 3 : (button->widget.width - getStringWidth(buttonFont, button->label)) / 2);
-        button->labely = button->widget.yMax - ((button->widget.height - getFontHeight(buttonFont)) >> 1) + 4;
+
+        if(button->label && button->widget.flags.allocated) {
+            free(button->label);
+            button->widget.flags.allocated = false;
+        }
+
+        if(getStringWidth(button->font, label) > button->widget.width - 6) {
+            if((button->widget.flags.allocated = (button->label = (char *)malloc(strlen(label) + 1)) != NULL)) {
+                strcpy(button->label, label);
+                while(getStringWidth(button->font, button->label) > button->widget.width - 6)
+                    button->label[strlen(button->label) - 1] = '\0';
+            }
+        } else
+            button->label  = (char *)label;
+
+        button->labelx = button->widget.x + (button->widget.flags.alignment == Align_Left ? 3 : (button->widget.width - getStringWidth(button->font, button->label)) / 2);
+        button->labely = button->widget.yMax - ((button->widget.height - getFontHeight(button->font)) >> 1) + 4;
         if(button->widget.flags.visible)
             buttonPaint(button, true);
     }
@@ -980,10 +994,16 @@ Button *UILibButtonCreate (Widget *parent, uint16_t x, uint16_t y, const char *l
 {
     Button *button = NULL;
 
-    if(parent && (button = (Button *)widgetCreate(parent, WidgetButton, sizeof(Button), x, y, 82, buttonHeight, eventHandler))) {
+    uint16_t width = getStringWidth(buttonFont, label) + 6;
+
+    if(width > parent->width)
+        width > parent->width;
+
+    if(parent && (button = (Button *)widgetCreate(parent, WidgetButton, sizeof(Button), x, y, width, buttonHeight, eventHandler))) {
 
         button->widget.bgColor         = Peru;
         button->widget.flags.alignment = Align_Center;
+        button->font                   = buttonFont;
         button->hltColor               = IndianRed;
         button->movColor               = NavajoWhite;
 
@@ -1092,7 +1112,7 @@ Widget *UILibWidgetSetWidth (Widget *widget, uint16_t width)
         widget->xMax  = widget->x + width - 1;
 
         if(widget->type == WidgetButton)
-            UILibButtonSetLabel ((Button *)widget, ((Button *)widget)->label);
+            UILibButtonSetLabel((Button *)widget, ((Button *)widget)->label);
 
         if(widget->flags.visible) {
             //! repaint bg if smaller
@@ -1111,7 +1131,7 @@ Widget *UILibWidgetSetHeight (Widget *widget, uint16_t height)
         widget->yMax   = widget->y + height - 1;
 
     if(widget->type == WidgetButton)
-        UILibButtonSetLabel ((Button *)widget, ((Button *)widget)->label);
+        UILibButtonSetLabel((Button *)widget, ((Button *)widget)->label);
 
         if(widget->flags.visible) {
             //! repaint bg if smaller

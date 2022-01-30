@@ -26,7 +26,7 @@
 #define F_TOUCH     150000
 #define F_TOUCH_CAL 50000
 
-static uint32_t sysclk = 0;
+static volatile uint32_t systicks = 0;
 static lcd_driver_t *driver;
 static volatile uint16_t ms_delay;
 static volatile bool pendown = false;
@@ -40,14 +40,17 @@ inline static uint8_t readByte (uint8_t cmd)
     return buf;
 }
 
+uint32_t lcd_systicks (void)
+{
+    return systicks;
+}
+
 /*
  * long delay
  */
 void lcd_delayms (uint16_t ms)
 {
     ms_delay = ms;
-
-    systick_hw->csr |= M0PLUS_SYST_CSR_ENABLE_BITS;
 
     while(ms_delay);
 }
@@ -173,13 +176,13 @@ static void TouchIntHandler (void)
 // Interrupt handler for 1 ms interval timer
 void isr_systick (void)
 {
-   if(ms_delay)
+    systicks++;
+
+    if(ms_delay)
         ms_delay--;
 
     if(driver->systickCallback)
         driver->systickCallback();
-    else if(!ms_delay)
-        systick_hw->csr &= ~M0PLUS_SYST_CSR_ENABLE_BITS;
 }
 
 /* MCU peripherals init */

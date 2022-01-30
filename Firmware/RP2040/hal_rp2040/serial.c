@@ -3,12 +3,12 @@
  *
  * Part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2021-03-03 / (c) Io Engineering / Terje
+ * v0.0.2 / 2022-01-28 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2021, Terje Io
+Copyright (c) 2021-2022, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -142,7 +142,7 @@ void serialRxFlush (void)
     rxbuffer.overflow = false;
 }
 
-void serialRxCancel (void)
+void serial_RxCancel (void)
 {
     serialRxFlush();
     rxbuffer.data[rxbuffer.head] = ASCII_CAN;

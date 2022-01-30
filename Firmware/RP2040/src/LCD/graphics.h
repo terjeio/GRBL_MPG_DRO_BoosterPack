@@ -110,6 +110,7 @@ extern uint16_t lcd_readID (void);
 
 extern void lcd_driverInit (lcd_driver_t *driver);
 extern void lcd_delayms (uint16_t ms);
+extern uint32_t lcd_systicks (void);
 extern void lcd_writeData (uint8_t data);
 extern void lcd_writePixel (colorRGB565 color, uint32_t count);
 extern void lcd_writePixels (uint16_t *pixels, uint32_t length);

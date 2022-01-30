@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2019-06-13 / (c) Io Engineering / Terje
+ * v0.0.3 / 2022-01-28 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2019, Terje Io
+Copyright (c) 2018-2022, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -104,6 +104,7 @@ typedef union {
                  ypos :1,
                  zpos :1,
                  offset :1,
+                 await_ack: 1,
                  await_wco_ok: 1,
                  leds :1,
                  dist : 1,
@@ -115,13 +116,40 @@ typedef union {
                  xmode: 1,
                  pins: 1,
                  reset: 1,
-                 device: 1,
                  feed_override: 1,
                  rapid_override: 1,
                  rpm_override: 1,
                  unassigned: 11;
     };
 } changes_t;
+
+typedef union {
+    uint8_t flags;
+    struct {
+        uint32_t sd_card: 1,
+                 lathe:   1,
+                 tool_change: 1,
+                 is_loaded: 1,
+                 unassigned: 5;
+    };
+} grbl_options_t;
+
+typedef struct {
+    bool is_loaded;
+    grbl_options_t options;
+    char device[MAX_STORED_LINE_LENGTH];
+} grbl_info_t;
+
+typedef struct sd_file {
+    uint32_t length;
+    char name[MAX_STORED_LINE_LENGTH];
+    struct sd_file *next;
+} sd_file_t;
+
+typedef struct {
+    uint_fast16_t num_files;
+    sd_file_t *files;
+} sd_files_t;
 
 typedef struct {
     grbl_t grbl;
@@ -143,10 +171,39 @@ typedef struct {
     char pins[10];
     char block[MAX_BLOCK_LENGTH];
     char message[MAX_BLOCK_LENGTH];
-    char device[MAX_STORED_LINE_LENGTH];
 } grbl_data_t;
 
-grbl_data_t *setGrblReceiveCallback (void (*fn)(char *line));
+typedef struct {
+    float fast_speed;
+    float slow_speed;
+    float step_speed;
+    float fast_distance;
+    float slow_distance;
+    float step_distance;
+} jog_config_t;
+
+typedef struct {
+    float rpm;
+    float mpg_rpm;
+    float rpm_min;
+    float rpm_max;
+} spindle_state_t;
+
+typedef struct {
+    bool is_loaded;
+    bool homing_enabled;
+    uint8_t mode;
+    spindle_state_t spindle;
+    jog_config_t jog_config;
+} settings_t;
+
+typedef void (*grbl_callback_ptr)(char *line);
+typedef void (*grbl_settings_received_ptr)(settings_t *settings);
+typedef void (*grbl_info_received_ptr)(grbl_info_t *info);
+typedef void (*grbl_parser_state_received_ptr)(grbl_data_t *info);
+typedef void (*grbl_sd_files_received_ptr)(sd_files_t *files);
+
+grbl_data_t *setGrblReceiveCallback (grbl_callback_ptr fn);
 void setGrblTransmitCallback (void (*fn)(bool ok, grbl_data_t *grbl_data));
 void grblPollSerial (void);
 void grblSerialFlush (void);
@@ -155,6 +212,14 @@ void grblClearError (void);
 void grblClearMessage (void);
 void grblSendSerial (char *line);
 bool grblParseState (char *state, grbl_t *grbl);
+bool grblAwaitACK (const char *command, uint_fast16_t timeout_ms);
+bool grblIsMPGActive (void);
+
+void grblGetInfo (grbl_info_received_ptr on_info_received);
+void grblGetSettings (grbl_settings_received_ptr on_settings_received);
+void grblGetParserState (grbl_parser_state_received_ptr on_parser_state_received);
+void grblGetSDFiles (grbl_sd_files_received_ptr on_sd_files_received);
+grbl_options_t grblGetOptions (void);
 
 void setGrblLegacyMode (bool on);
 char mapRTC2Legacy (char c);

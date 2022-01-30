@@ -3,7 +3,7 @@
  *
  * Part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.2 / 2022-01-07 / (c) Io Engineering / Terje
+ * v0.0.3 / 2022-01-29 / (c) Io Engineering / Terje
  */
 
 /*
@@ -44,6 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "hardware/irq.h"
 #include "encoder.pio.h"
 
+#include "../src/grbl.h"
 #include "../src/config.h"
 #include "../src/interface.h"
 #include "../src/keypad.h"
@@ -87,6 +88,7 @@ static const uint8_t MICROSTEP_3  = 0b01;
 #define SHIFT_KEY 0b1000010000
 
 static const keypad_key_t kmap[] = {
+    { .key = CMD_STOP, .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000001 }
 /*    { .key = '4', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000001 },
     { .key = '5', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000010 },
     { .key = '6', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000100 } */

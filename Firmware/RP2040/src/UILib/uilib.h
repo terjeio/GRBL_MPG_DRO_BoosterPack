@@ -1,12 +1,12 @@
 /*
  * uilib.h - User Interface Library
  *
- * v1.0.7 / 2021-03-03/ (c) Io Engineering / Terje
+ * v1.0.8 / 2022-01-29 / (c) Io Engineering / Terje
  *
  */
 
 /*
- * Copyright (c) 2015-2021, Io Engineering
+ * Copyright (c) 2015-2022, Io Engineering
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -125,6 +125,7 @@ typedef union {
                  visible     :1,
                  disabled    :1,
                  opaque      :1,
+                 allocated   :1,
                  alignment   :2;
     };
 } WidgetFlags;
@@ -180,7 +181,8 @@ typedef struct Button {
     RGBColor_t hltColor;
     RGBColor_t movColor;
     RGBColor_t curColor;
-    char* label;
+    char *label;
+    Font *font;
     uint16_t labelx;
     uint16_t labely;
     uint8_t group;

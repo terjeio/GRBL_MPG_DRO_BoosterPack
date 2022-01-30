@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 / 2018-07-15 / (c)Io Engineering / Terje
+ * v0.0.2 / 2022-01-28 / (c)Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2022, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -40,8 +40,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "../UILib/uilib.h"
 
+#include "sdcard.h"
 #include "threading.h"
 #include "grblutils.h"
+#include "../grblcomm.h"
 
 static bool modeMPG;
 static Canvas *canvasConfig = 0, *canvasPrevious;
@@ -74,6 +76,16 @@ static void handlerUtilities (Widget *self, Event *event)
         UILibButtonFlash((Button *)self);
         UILibWidgetDeselect(self);
         GRBLUtilsShowCanvas();
+    }
+}
+
+static void handlerSDCard (Widget *self, Event *event)
+{
+    if(event->reason == EventPointerUp) {
+        event->claimed = true;
+        UILibButtonFlash((Button *)self);
+        UILibWidgetDeselect(self);
+        SDCardShowCanvas(canvasPrevious);
     }
 }
 
@@ -113,6 +125,10 @@ static void handlerCanvas (Widget *self, Event *event)
             while(widget) {
                 if(widget->privateData == (void *)1)
                     UILibWidgetEnable(widget, modeMPG);
+                else if(widget->privateData == (void *)2)
+                    UILibWidgetEnable(widget, modeMPG && grblGetOptions().sd_card && grblAwaitACK("$FM", 200));
+                else if(widget->privateData == (void *)3)
+                    UILibWidgetEnable(widget, modeMPG && grblGetOptions().lathe);
                 widget = widget->nextSibling;
             }
             break;
@@ -136,15 +152,18 @@ void MenuShowCanvas (bool mpgMode)
     if(!canvasConfig) {
 
         Widget *btn;
+        uint16_t ypos = 40;
 
         canvasConfig = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
 
-        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 40, "Exit", handlerExit), 250);
-        btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 65, "Threading", handlerThreading), 250);
+        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, ypos, "Exit", handlerExit), 250);
+        btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, (ypos += 25), "SD Card", handlerSDCard), 250);
+        btn->privateData = (void *)2;
+        btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, (ypos += 25), "Threading", handlerThreading), 250);
+        btn->privateData = (void *)3;
+        btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, (ypos += 25), "grbl Utilities", handlerUtilities), 250);
         btn->privateData = (void *)1;
-        btn = UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 90, "grbl Utilities", handlerUtilities), 250);
-        btn->privateData = (void *)1;
-        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, 115, "Configure", handlerConfig), 250);
+/*        UILibWidgetSetWidth((Widget *)UILibButtonCreate((Widget *)canvasConfig, 35, (ypos += 25), "Configure", handlerConfig), 250); */
     }
 
     canvasPrevious = UILibCanvasGetCurrent();

@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.5 / 2022-01-03 / (c) Io Engineering / Terje
+ * v0.0.6 / 2022-01-30 / (c) Io Engineering / Terje
  */
 
 /*
@@ -44,6 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "grbl.h"
 #include "keypad.h"
 #include "interface.h"
+#include "grblcomm.h"
 
 #define KEYBUF_SIZE 16
 
@@ -56,12 +57,112 @@ typedef struct {
 static jogmode_t jogMode = JogMode_Slow;
 static keyevent_t keyevent;
 
-static bool xlate = false;
+static bool xlate = false, jogging = false;
 static keybuffer_t keybuf = {0};
 static keybuffer_t keyforward = {0};
 static mpg_t mpg_prev;
 
 static void fixkey (bool keydown, char key);
+
+static bool passthrough (char *c)
+{
+    bool passtrough = false;
+
+    switch(*c) {
+        case '\r':
+        case 'h':
+        case CMD_FEED_HOLD_LEGACY:
+        case CMD_CYCLE_START_LEGACY:
+        case CMD_STOP:
+        case CMD_SAFETY_DOOR:
+        case CMD_OPTIONAL_STOP_TOGGLE:
+        case CMD_SINGLE_BLOCK_TOGGLE:
+        case CMD_PROBE_CONNECTED_TOGGLE:
+        case CMD_OVERRIDE_FAN0_TOGGLE:
+        case CMD_OVERRIDE_COOLANT_FLOOD_TOGGLE:
+        case CMD_OVERRIDE_COOLANT_MIST_TOGGLE:
+        case CMD_OVERRIDE_FEED_COARSE_PLUS:
+        case CMD_OVERRIDE_FEED_COARSE_MINUS:
+        case CMD_OVERRIDE_FEED_FINE_PLUS:
+        case CMD_OVERRIDE_FEED_FINE_MINUS:
+        case CMD_OVERRIDE_RAPID_RESET:
+        case CMD_OVERRIDE_RAPID_MEDIUM:
+        case CMD_OVERRIDE_RAPID_LOW:
+        case CMD_OVERRIDE_SPINDLE_RESET:
+        case CMD_OVERRIDE_SPINDLE_COARSE_PLUS:
+        case CMD_OVERRIDE_SPINDLE_COARSE_MINUS:
+        case CMD_OVERRIDE_SPINDLE_FINE_PLUS:
+        case CMD_OVERRIDE_SPINDLE_FINE_MINUS:
+        case CMD_OVERRIDE_SPINDLE_STOP:
+            passtrough = true;
+            break;
+
+        case 'I':
+            *c = CMD_FEED_OVR_RESET;
+            passtrough = true;
+            break;
+
+        case 'i':
+            *c = CMD_OVERRIDE_FEED_COARSE_PLUS;
+            passtrough = true;
+            break;
+
+        case 'j':
+            *c = CMD_OVERRIDE_FEED_COARSE_MINUS;
+            passtrough = true;
+            break;
+
+        case 'K':
+            *c = CMD_OVERRIDE_SPINDLE_RESET;
+            passtrough = true;
+            break;
+
+         case 'k':
+            *c = CMD_OVERRIDE_SPINDLE_COARSE_PLUS;
+            passtrough = true;
+            break;
+
+        case 'z':
+            *c = CMD_OVERRIDE_SPINDLE_COARSE_MINUS;
+            passtrough = true;
+            break;
+
+        default:
+            break;
+    }   
+
+    return passtrough;
+}
+
+static bool is_jog_command (char c)
+{   
+    bool jog = true;
+
+    switch(c) {
+
+        case JOG_XR:
+        case JOG_XL:
+        case JOG_YF:
+        case JOG_YB:
+        case JOG_ZU:
+        case JOG_ZD:
+        case JOG_XRYF:
+        case JOG_XRYB:
+        case JOG_XLYF:
+        case JOG_XLYB:
+        case JOG_XRZU:
+        case JOG_XRZD:
+        case JOG_XLZU:
+        case JOG_XLZD:
+             break;
+
+        default:
+             jog = false;
+             break;
+    }
+
+    return jog;
+}
 
 void keypad_enqueue_keycode (bool down, char c)
 {
@@ -82,10 +183,11 @@ void keypad_enqueue_keycode (bool down, char c)
 //    if(c == 'q' || c == 'r' || c == 's' || c == 't') // temp until keypad is corrected?
 //        c += 4;
 
-    if((keyevent.claimed = keyevent.forward_uart || (keyevent.forward && !(c == '\r' || c == 'h' || c == CMD_FEED_HOLD_LEGACY || c == CMD_CYCLE_START_LEGACY)))) {
-        if(keyevent.forward_uart)
+    if((keyevent.claimed = keyevent.forward_uart || (keyevent.forward && !passthrough(&c)))) {
+        if(keyevent.forward_uart) {
+            jogging = is_jog_command(c);
             serial_putC(c);
-        else {
+        } else {
             keyevent.keycode = c;
             keypad_setFwd(true);
         }
@@ -273,11 +375,6 @@ void keypad_forward (bool on)
     keyevent.claimed = false;
     keyevent.keycode = 0;
     keypad_setFwd(false);
-
-#ifdef UART_MODE
-    if(keyevent.forward)
-        serial_putC('0' + (char)jogMode);
-#endif
 }
 
 bool keypad_forward_queue_is_empty (void)
@@ -339,8 +436,10 @@ bool keypad_release (void)
 
     if((was_claimed = keyevent.claimed)) {
         keyevent.claimed = false;
-        if(keyevent.forward_uart)
+        if(keyevent.forward_uart && jogging) {
+            jogging = false;
             serial_putC(CMD_JOG_CANCEL);
+        }
     }
 
     return was_claimed;
@@ -351,14 +450,12 @@ jogmode_t keypadJogModeNext (void) {
     jogMode = jogMode == JogMode_Step ? JogMode_Fast : (jogMode == JogMode_Fast ? JogMode_Slow : JogMode_Step);
 
 #ifdef UART_MODE
-    if(keyevent.forward)
+    if(keyevent.forward && !grblIsMPGActive())
         serial_putC('0' + (char)jogMode);
 #else
-
     keyevent.claimed = true;
     keyevent.keycode = '0' + (char)jogMode;
     keypad_setFwd(true);
-
 #endif
 
     if(interface.on_jogModeChanged)

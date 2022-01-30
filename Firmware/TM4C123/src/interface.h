@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.2 / 2022-01-03 / (c) Io Engineering / Terje
+ * v0.0.3 / 2022-01-28 / (c) Io Engineering / Terje
  */
 
 /*
@@ -96,19 +96,26 @@ extern void serial_init (void);
 extern int16_t serial_getC (void);
 extern bool serial_putC (const char c);
 extern void serial_writeLn (const char *data);
+extern void serial_RxCancel (void);
+
 extern bool keypad_isKeydown (void);
 extern void keypad_setFwd (bool on);
+
 extern void signal_setFeedHold (bool on);
 extern void signal_setCycleStart (bool on);
 extern void signal_setMPGMode (bool on);
 extern bool signal_getMPGMode (void);
 extern void signal_setLimitsOverride (bool on);
 extern bool signal_getSpindleDir (void);
+
 extern void leds_setState (leds_t leds);
 extern leds_t leds_getState (void);
+
 extern void navigator_setLimits (int16_t min, int16_t max);
+
 extern void mpg_setActiveAxis (uint_fast8_t axis);
 extern mpg_t *mpg_getPosition (void);
 extern void mpg_reset (void);
 extern void mpg_setCallback (on_mpgChanged_ptr fn);
+
 extern uint32_t rpm_get (void);
