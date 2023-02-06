@@ -1,12 +1,12 @@
 /*
  * hal/driver.c - MPG/DRO for grbl on a secondary processor
  *
- * v0.0.3 / 2022-01-02 / (c) Io Engineering / Terje
+ * v0.0.4 / 2023-01-06 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2022, Terje Io
+Copyright (c) 2018-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -203,7 +203,13 @@ void keypad_setFwd (bool on)
 void leds_setState (leds_t leds)
 {
     if(leds_state.value != leds.value) {
+// RP2040 regression workaround
+        bool tmp = leds.run;
+        leds.run = leds.mode;
+        leds.mode = tmp;
+// end
         leds_state.value = leds.value;
+
         i2c_nb_send(KEYPAD_I2CADDR, leds.value);
     }
 }

@@ -1,12 +1,12 @@
 //
 // serial.c - (UART) port library for Tiva
 //
-// v1.1 / 2022-01-03 / Io Engineering / Terje
+// v1.1 / 2023-02-01 / Io Engineering / Terje
 //
 
 /*
 
-Copyright (c) 2017-2022, Terje Io
+Copyright (c) 2017-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -183,7 +183,7 @@ void serialRxFlush (void)
 #endif
 }
 
-void serialRxCancel (void)
+void serial_RxCancel (void)
 {
     rxbuf[rx_head] = ASCII_CAN;
     rx_tail = rx_head;

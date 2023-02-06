@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v1.0.11 / 2022-01-28 / (c)Io Engineering / Terje
+ * v1.0.12 / 2023-01-06 / (c)Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2022, Terje Io
+Copyright (c) 2018-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -334,6 +334,7 @@ static void processKeypress (void)
 {
     static char command[30];
 
+    uint_fast8_t i;
     bool addedGcode, jogCommand = false;
     char keycode;
 
@@ -354,7 +355,7 @@ static void processKeypress (void)
 
         case 'T':
             mpg_axis = mpg_axis == Z_AXIS ? X_AXIS : mpg_axis + 1;
-            for(uint_fast8_t i = 0; i < 3; i++) {
+            for(i = 0; i < 3; i++) {
                 if(axis[i].visible) {
                     axis[i].lblAxis->widget.fgColor = i == mpg_axis ? Green : White;
                     UILibLabelDisplay(axis[i].lblAxis, axis[i].label);
@@ -365,7 +366,7 @@ static void processKeypress (void)
 
         case '4':
             mpg_axis = X_AXIS;
-            for(uint_fast8_t i = 0; i < 3; i++) {
+            for(i = 0; i < 3; i++) {
                 if(axis[i].visible) {
                     axis[i].lblAxis->widget.fgColor = i == mpg_axis ? Green : White;
                     UILibLabelDisplay(axis[i].lblAxis, axis[i].label);
@@ -376,7 +377,7 @@ static void processKeypress (void)
 
         case '5':
             mpg_axis = Y_AXIS;
-            for(uint_fast8_t i = 0; i < 3; i++) {
+            for(i = 0; i < 3; i++) {
                 if(axis[i].visible) {
                     axis[i].lblAxis->widget.fgColor = i == mpg_axis ? Green : White;
                     UILibLabelDisplay(axis[i].lblAxis, axis[i].label);
@@ -387,7 +388,7 @@ static void processKeypress (void)
 
         case '6':
             mpg_axis = Z_AXIS;
-            for(uint_fast8_t i = 0; i < 3; i++) {
+            for(i = 0; i < 3; i++) {
                 if(axis[i].visible) {
                     axis[i].lblAxis->widget.fgColor = i == mpg_axis ? Green : White;
                     UILibLabelDisplay(axis[i].lblAxis, axis[i].label);
@@ -994,12 +995,13 @@ static void canvasHandler (Widget *self, Event *uievent)
             break;
 
         case EventWidgetPainted:;
+            uint_fast8_t i;
             char rpm[10];
             event = 0;
             isReady = false;
             setBackgroundColor(canvasMain->widget.bgColor);
             grbl_data = setGrblReceiveCallback(displayGrblData);
-            for(uint_fast8_t i = 0; i < 3; i++) {
+            for(i = 0; i < 3; i++) {
                 if(axis[i].visible) {
                     axis[i].lblAxis->widget.fgColor = i == mpg_axis ? Green : White;
                     UILibLabelDisplay(axis[i].lblAxis, axis[i].label);
@@ -1078,7 +1080,8 @@ void DROInitCanvas (void)
 
     i = 3;
     do {
-        axis[--i].mpg_factor = mpgFactors[axis[i].mpg_idx];
+        i--;
+        axis[i].mpg_factor = mpgFactors[axis[i].mpg_idx];
     } while(i);
 
 }

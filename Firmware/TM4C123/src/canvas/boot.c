@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.4 / 2022-01-29 / (c)Io Engineering / Terje
+ * v0.0.5 / 2023-01-06 / (c)Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2015-2022, Terje Io
+Copyright (c) 2015-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -48,7 +48,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "boot.h"
 
-char const ioEngineering[] = "2018-2022 Io Engineering", version[] = "v0.04 - 2022-01-29";
+char const ioEngineering[] = "2018-2022 Io Engineering", version[] = "v0.05 - 2023-01-06";
 
 static Canvas *canvasBoot = NULL;
 

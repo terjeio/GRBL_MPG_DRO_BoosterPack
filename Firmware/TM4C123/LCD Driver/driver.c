@@ -42,6 +42,7 @@ static uint32_t sysclk = 0;
 static lcd_driver_t *driver;
 static volatile uint16_t ms_delay;
 static volatile bool pendown = false;
+static volatile uint32_t systicks = 0;
 
 //TODO: check real clock freq with scope!!
 inline static void dpi_clk (uint32_t f)
@@ -67,8 +68,6 @@ inline static uint8_t readByte (uint8_t cmd)
 void lcd_delayms (uint16_t ms)
 {
     ms_delay = ms;
-
-    SysTickEnable();
 
     while(ms_delay);
 }
@@ -204,13 +203,13 @@ static void TouchIntHandler (void)
 // Interrupt handler for 1 ms interval timer
 void systick_isr (void)
 {
+    systicks++;
+
     if(ms_delay)
         ms_delay--;
 
     if(driver->systickCallback)
         driver->systickCallback();
-    else if(!ms_delay)
-        SysTickDisable();
 }
 
 /* MCU peripherals init */
@@ -266,6 +265,7 @@ void lcd_driverInit (lcd_driver_t *drv)
     SysTickPeriodSet(sysclk / 1000 - 1);
     SysTickIntRegister(systick_isr);
     SysTickIntEnable();
+    SysTickEnable();
 
 #ifdef TOUCH_CS_PORT
     MAP_GPIOPinTypeGPIOOutput(TOUCH_CS_PORT, TOUCH_CS_PIN);

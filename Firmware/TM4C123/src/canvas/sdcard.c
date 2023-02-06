@@ -174,7 +174,8 @@ void SDCardShowCanvas (Canvas *previous)
 
         canvasSDCard = UILibCanvasCreate(0, 0, 320, 240, handlerCanvas);
 		listPrograms = UILibListCreate((Widget *)canvasSDCard, 10, 40, 300, LISTELEMENTS, handlerProgramList);
-		for(uint_fast8_t i = 0; i < LISTELEMENTS; i++)
+		uint_fast8_t i;
+		for(i = 0; i < LISTELEMENTS; i++)
 			UILibListCreateElement(listPrograms, i, "", handlerSelectList);
     }
 
