@@ -77,7 +77,7 @@ I2C \(P10\):
 GND GND P10.1
 SDA PD1 P10.2
 SCL PD0 P10.3
-IRQ PD2 P10.4
+IRQ PD2 P10.4 (I2C Strobe signal)
 NC  --- P10.5
 ```
 
@@ -157,4 +157,4 @@ P2.5 Keypad strobe PC4
 ```
 
 ---
-2021-08-30
+2023-02-27
