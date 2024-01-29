@@ -1,12 +1,12 @@
 /*
  * config.h - MPG/DRO for grbl on a secondary processor
  *
- * v0.0.3 / 2021-01-05 / (c) Io Engineering / Terje
+ * v0.0.4 / 2023-03-04 / (c)Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2022, Terje Io
+Copyright (c) 2018-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -39,8 +39,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _MPG_CONFIG_H_
 #define _MPG_CONFIG_H_
 
+#ifndef KEYPAD_I2CADDR
 #define KEYPAD_I2CADDR 0x49
-//#define UART_MODE
-
 #endif
+#ifndef UART_MODE
+#define UART_MODE 0
+#endif
+
+#endif // _MPG_CONFIG_H_
 

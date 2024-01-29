@@ -2,7 +2,7 @@
   config.h - compile time configuration, see note below
   Part of Grbl
 
-  Copyright (c) 2019 Terje Io
+  Copyright (c) 2019-2023 Terje Io
   Copyright (c) 2012-2016 Sungeun K. Jeon for Gnea Research LLC
   Copyright (c) 2009-2011 Simen Svale Skogsrud
 
@@ -20,7 +20,7 @@
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-// NOTE: This file contains parts of config.h copied from grbl for use by MPG/DRO processor
+// NOTE: This file contains parts of various files copied from grbl for use by MPG/DRO processor
 
 // Define realtime command special characters. These characters are 'picked-off' directly from the
 // serial read data stream and are not passed to the grbl line execution parser. Select characters
@@ -31,6 +31,8 @@
 
 #ifndef __grbl_h__
 #define __grbl_h__
+
+#include <stdint.h>
 
 #define CMD_EXIT 0x03 // ctrl-C
 #define CMD_RESET 0x18 // ctrl-X
@@ -181,5 +183,183 @@ typedef enum {
     Setting_AxisSettingsBase = 100, // NOTE: Reserving settings values >= 100 for axis settings. Up to 255.
     Setting_AxisSettingsMax = 255
 } setting_type_t;
+
+typedef enum {
+    CoordinateSystem_G54 = 0,                       //!< 0 - G54 (G12)
+    CoordinateSystem_G55,                           //!< 1 - G55 (G12)
+    CoordinateSystem_G56,                           //!< 2 - G56 (G12)
+    CoordinateSystem_G57,                           //!< 3 - G57 (G12)
+    CoordinateSystem_G58,                           //!< 4 - G58 (G12)
+    CoordinateSystem_G59,                           //!< 5 - G59 (G12)
+#if COMPATIBILITY_LEVEL <= 1
+    CoordinateSystem_G59_1,                         //!< 6 - G59.1 (G12) - availability depending on #COMPATIBILITY_LEVEL <= 1
+    CoordinateSystem_G59_2,                         //!< 7 - G59.2 (G12) - availability depending on #COMPATIBILITY_LEVEL <= 1
+    CoordinateSystem_G59_3,                         //!< 8 - G59.3 (G12) - availability depending on #COMPATIBILITY_LEVEL <= 1
+#endif
+    N_WorkCoordinateSystems,                        //!< 9 when #COMPATIBILITY_LEVEL <= 1, 6 otherwise
+    CoordinateSystem_G28 = N_WorkCoordinateSystems, //!< 9 - G28 (G0) when #COMPATIBILITY_LEVEL <= 1, 6 otherwise
+    CoordinateSystem_G30,                           //!< 10 - G30 (G0) when #COMPATIBILITY_LEVEL <= 1, 7 otherwise
+    CoordinateSystem_G92,                           //!< 11 - G92 (G0) when #COMPATIBILITY_LEVEL <= 1, 8 otherwise
+    N_CoordinateSystems                             //!< 12 when #COMPATIBILITY_LEVEL <= 1, 9 otherwise
+} __attribute__ ((__packed__)) coord_system_id_t;
+
+// Define Grbl status codes. Valid values (0-255)
+typedef enum {
+    Status_OK = 0,
+    Status_ExpectedCommandLetter = 1,
+    Status_BadNumberFormat = 2,
+    Status_InvalidStatement = 3,
+    Status_NegativeValue = 4,
+    Status_HomingDisabled = 5,
+    Status_SettingStepPulseMin = 6,
+    Status_SettingReadFail = 7,
+    Status_IdleError = 8,
+    Status_SystemGClock = 9,
+    Status_SoftLimitError = 10,
+    Status_Overflow = 11,
+    Status_MaxStepRateExceeded = 12,
+    Status_CheckDoor = 13,
+    Status_LineLengthExceeded = 14,
+    Status_TravelExceeded = 15,
+    Status_InvalidJogCommand = 16,
+    Status_SettingDisabledLaser = 17,
+    Status_Reset = 18,
+    Status_NonPositiveValue = 19,
+
+    Status_GcodeUnsupportedCommand = 20,
+    Status_GcodeModalGroupViolation = 21,
+    Status_GcodeUndefinedFeedRate = 22,
+    Status_GcodeCommandValueNotInteger = 23,
+    Status_GcodeAxisCommandConflict = 24,
+    Status_GcodeWordRepeated = 25,
+    Status_GcodeNoAxisWords = 26,
+    Status_GcodeInvalidLineNumber = 27,
+    Status_GcodeValueWordMissing = 28,
+    Status_GcodeUnsupportedCoordSys = 29,
+    Status_GcodeG53InvalidMotionMode = 30,
+    Status_GcodeAxisWordsExist = 31,
+    Status_GcodeNoAxisWordsInPlane = 32,
+    Status_GcodeInvalidTarget = 33,
+    Status_GcodeArcRadiusError = 34,
+    Status_GcodeNoOffsetsInPlane = 35,
+    Status_GcodeUnusedWords = 36,
+    Status_GcodeG43DynamicAxisError = 37,
+    Status_GcodeIllegalToolTableEntry = 38,
+    Status_GcodeValueOutOfRange = 39,
+    Status_GcodeToolChangePending = 40,
+    Status_GcodeSpindleNotRunning = 41,
+    Status_GcodeIllegalPlane = 42,
+    Status_GcodeMaxFeedRateExceeded = 43,
+    Status_GcodeRPMOutOfRange = 44,
+    Status_LimitsEngaged = 45,
+    Status_HomingRequired = 46,
+    Status_GCodeToolError = 47,
+    Status_ValueWordConflict = 48,
+    Status_SelfTestFailed = 49,
+    Status_EStop = 50,
+    Status_MotorFault = 51,
+    Status_SettingValueOutOfRange = 52,
+    Status_SettingDisabled = 53,
+    Status_GcodeInvalidRetractPosition = 54,
+    Status_IllegalHomingConfiguration = 55,
+
+// Some error codes as defined in bdring's ESP32 port
+    Status_SDMountError = 60,
+    Status_SDReadError = 61,
+    Status_SDFailedOpenDir = 62,
+    Status_SDDirNotFound = 63,
+    Status_SDFileEmpty = 64,
+
+    Status_BTInitError = 70,
+
+//
+    Status_ExpressionUknownOp = 71,
+    Status_ExpressionDivideByZero = 72,
+    Status_ExpressionArgumentOutOfRange = 73,
+    Status_ExpressionInvalidArgument = 74,
+    Status_ExpressionSyntaxError = 75,
+    Status_ExpressionInvalidResult = 76,
+
+    Status_AuthenticationRequired = 77,
+    Status_AccessDenied = 78,
+
+    Status_Unhandled, // For internal use only
+    Status_StatusMax = Status_Unhandled
+} __attribute__ ((__packed__)) status_code_t;
+
+typedef union {
+    uint8_t mask;
+    uint8_t value;
+    struct {
+        uint8_t x :1,
+                y :1,
+                z :1,
+                a :1,
+                b :1,
+                c :1,
+                u :1,
+                v :1;
+    };
+} axes_signals_t;
+
+typedef union {
+    uint8_t value;                 //!< Bitmask value
+    uint8_t mask;                  //!< Synonym for bitmask value
+    struct {
+        uint8_t flood          :1, //!< Flood coolant.
+                mist           :1, //!< Mist coolant, optional.
+                shower         :1, //!< Shower coolant, currently unused.
+                trough_spindle :1, //!< Through spindle coolant, currently unused.
+                unused         :4;
+    };
+} coolant_state_t;
+
+typedef union {
+    uint8_t value;
+    uint8_t mask;
+    struct {
+        uint8_t on               :1,
+                ccw              :1,
+                pwm              :1, //!< NOTE: only used for PWM inversion setting
+                reserved         :1,
+                override_disable :1,
+                encoder_error    :1,
+                at_speed         :1, //!< Spindle is at speed.
+                synchronized     :1;
+    };
+} spindle_state_t;
+
+typedef union {
+    uint16_t value;
+    uint16_t mask;
+    struct {
+        uint16_t reset              :1,
+                 feed_hold          :1,
+                 cycle_start        :1,
+                 safety_door_ajar   :1,
+                 block_delete       :1,
+                 stop_disable       :1, //! M1
+                 e_stop             :1,
+                 probe_disconnected :1,
+                 motor_fault        :1,
+                 motor_warning      :1,
+                 limits_override    :1,
+                 single_block       :1,
+                 unassigned         :2,
+                 probe_triggered    :1, //! used for probe protection
+                 deasserted         :1; //! this flag is set if signals are deasserted. Note: do NOT pass on to the control_interrupt_handler if set.
+    };
+} control_signals_t;
+
+typedef uint_fast16_t override_t;
+
+typedef struct {
+    override_t feed_rate;           //!< Feed rate override value in percent
+    override_t rapid_rate;          //!< Rapids override value in percent
+    override_t spindle_rpm;         //!< __NOTE:_ Not used by the core, it maintain per spindle override in \ref spindle_param_t
+//    spindle_stop_t spindle_stop;    //!< Tracks spindle stop override states
+//    gc_override_flags_t control;    //!< Tracks override control states.
+} overrides_t;
+
 
 #endif

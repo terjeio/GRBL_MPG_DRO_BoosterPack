@@ -10,4 +10,4 @@ target_sources(mpg_dro_driver INTERFACE
 )
 
 target_include_directories(mpg_dro_driver INTERFACE ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(mpg_dro_driver INTERFACE pico_stdlib hardware_uart hardware_pio hardware_i2c hardware_spi hardware_gpio hardware_pwm hardware_clocks)
+target_link_libraries(mpg_dro_driver INTERFACE pico_stdlib pico_i2c_slave hardware_uart hardware_pio hardware_i2c hardware_spi hardware_gpio hardware_pwm hardware_clocks)

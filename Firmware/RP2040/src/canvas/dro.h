@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.1 (alpha) / 2018-06-25
+ * v0.0.1 (alpha) / 2024-01-29
  */
 
 /*
 
-Copyright (c) 2018, Terje Io
+Copyright (c) 2018-2024, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _MAIN_H_
 #define _MAIN_H_
 
-#include "../LCD/lcd.h"
+#include "../LCD/graphics.h"
 
 void DROInitCanvas (void);
 void DROShowCanvas (lcd_display_t *screen);

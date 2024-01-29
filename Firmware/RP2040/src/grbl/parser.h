@@ -1,14 +1,13 @@
 /*
- * grblcomm.h - collects and dispatches lines of data from grbls serial output stream
+ * parser.c - collects, parses and dispatches lines of data from
+ *            grbls serial output stream and/or i2c display protocol
  *
- * part of MPG/DRO for grbl on a secondary processor
- *
- * v0.0.3 / 2022-01-28 / (c) Io Engineering / Terje
+ * v0.0.6 / 2023-08-11 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2022, Terje Io
+Copyright (c) 2018-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -41,11 +40,17 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _GRBLCOMM_H_
 #define _GRBLCOMM_H_
 
+#include <stddef.h>
 #include <stdbool.h>
 
 #include "grbl.h"
-#include "interface.h"
-#include "LCD/colorRGB.h"
+#include "i2c_interface.h"
+#include "../LCD/colorRGB.h"
+
+#define SERIAL_NO_DATA -1
+#define MAX_BLOCK_LENGTH 256
+
+//#define PARSER_SERIAL_ENABLE
 
 #define NUMSTATES 11
 
@@ -77,60 +82,112 @@ typedef struct {
 } grbl_t;
 
 typedef struct {
-    float x;
-    float y;
-    float z;
-} coord_values_t;
-
-typedef struct {
     float rpm_programmed;
     float rpm_actual;
-    bool on;
-    bool ccw;
-    int32_t rpm_override;
+    spindle_state_t state;
 } spindle_data_t;
 
-typedef struct {
-    bool flood;
-    bool mist;
-} coolant_data_t;
+typedef union {
+    uint8_t value;
+    struct {
+        uint8_t led0 :1,
+                led1 :1,
+                led2 :1,
+                led3 :1,
+                led4 :1,
+                led5 :1,
+                led6 :1,
+                led7 :1;
+    };
+    struct {
+        uint8_t mode     :1,
+                run      :1,
+                hold     :1,
+                spindle  :1,
+                flood    :1,
+                mist     :1,
+                tlo_refd :1,
+                unused   :1;
+    };
+} leds_t;
 
 typedef union {
     uint32_t flags;
     struct {
-        uint32_t mpg :1,
-                 state :1,
-                 xpos :1,
-                 ypos :1,
-                 zpos :1,
-                 offset :1,
-                 await_ack: 1,
-                 await_wco_ok: 1,
-                 leds :1,
-                 dist : 1,
-                 message: 1,
-                 feed: 1,
-                 rpm: 1,
-                 alarm: 1,
-                 error: 1,
-                 xmode: 1,
-                 pins: 1,
-                 reset: 1,
-                 feed_override: 1,
-                 rapid_override: 1,
-                 rpm_override: 1,
-                 unassigned: 11;
+        uint32_t xpos           :1,
+                 ypos           :1,
+                 zpos           :1,
+                 apos           :1,
+                 bpos           :1,
+                 cpos           :1,
+                 upos           :1,
+                 vpos           :1,
+                 mpg            :1,
+                 state          :1,
+                 offset         :1,
+                 await_ack      :1,
+                 await_wco_ok   :1,
+                 leds           :1,
+                 dist           :1,
+                 message        :1,
+                 feed           :1,
+                 rpm            :1,
+                 alarm          :1,
+                 error          :1,
+                 xmode          :1,
+                 coolant        :1,
+                 spindle        :1,
+                 pins           :1,
+                 reset          :1,
+                 feed_override  :1,
+                 rapid_override :1,
+                 rpm_override   :1,
+                 jog_mode       :1,
+                 tlo_reference  :1,
+                 auto_reporting :1,
+                 unassigned     :1;
     };
 } changes_t;
+
+typedef struct {
+    uint8_t n_axis;
+    grbl_t grbl;
+    machine_coords_t position;
+    machine_coords_t offset;
+    spindle_data_t spindle;
+    coolant_state_t coolant;
+    overrides_t override;
+    float feed_rate;
+    bool useWPos;
+    bool awaitWCO;
+    bool absDistance;
+    bool mpgMode;
+    bool xModeDiameter;
+    bool tloReferenced;
+    bool autoReporting;
+    uint32_t autoReportingInterval;
+    jog_mode_t jog_mode;
+    changes_t changed;
+    uint8_t alarm;
+    uint8_t error;
+    leds_t leds;
+    char pins[10];
+    char block[MAX_BLOCK_LENGTH];
+    char message[MAX_BLOCK_LENGTH];
+} grbl_data_t;
+
+typedef void (*grbl_callback_ptr)(char *line);
+
+#ifdef PARSER_SERIAL_ENABLE
 
 typedef union {
     uint8_t flags;
     struct {
-        uint32_t sd_card: 1,
-                 lathe:   1,
-                 tool_change: 1,
-                 is_loaded: 1,
-                 unassigned: 5;
+        uint32_t sd_card     :1,
+                 lathe       :1,
+                 tool_change :1,
+                 is_loaded   :1,
+                 unassigned  :5;
     };
 } grbl_options_t;
 
@@ -152,28 +209,6 @@ typedef struct {
 } sd_files_t;
 
 typedef struct {
-    grbl_t grbl;
-    float position[3];
-    float offset[3];
-    spindle_data_t spindle;
-    coolant_data_t coolant;
-    int32_t feed_override;
-    int32_t rapid_override;
-    float feed_rate;
-    bool useWPos;
-    bool awaitWCO;
-    bool absDistance;
-    bool mpgMode;
-    bool xModeDiameter;
-    changes_t changed;
-    uint8_t alarm;
-    uint8_t error;
-    char pins[10];
-    char block[MAX_BLOCK_LENGTH];
-    char message[MAX_BLOCK_LENGTH];
-} grbl_data_t;
-
-typedef struct {
     float fast_speed;
     float slow_speed;
     float step_speed;
@@ -187,23 +222,21 @@ typedef struct {
     float mpg_rpm;
     float rpm_min;
     float rpm_max;
-} spindle_state_t;
+} spindle_settings_t;
 
 typedef struct {
     bool is_loaded;
     bool homing_enabled;
     uint8_t mode;
-    spindle_state_t spindle;
+    spindle_settings_t spindle;
     jog_config_t jog_config;
 } settings_t;
 
-typedef void (*grbl_callback_ptr)(char *line);
 typedef void (*grbl_settings_received_ptr)(settings_t *settings);
 typedef void (*grbl_info_received_ptr)(grbl_info_t *info);
 typedef void (*grbl_parser_state_received_ptr)(grbl_data_t *info);
 typedef void (*grbl_sd_files_received_ptr)(sd_files_t *files);
 
-grbl_data_t *setGrblReceiveCallback (grbl_callback_ptr fn);
 void setGrblTransmitCallback (void (*fn)(bool ok, grbl_data_t *grbl_data));
 void grblPollSerial (void);
 void grblSerialFlush (void);
@@ -223,5 +256,34 @@ grbl_options_t grblGetOptions (void);
 
 void setGrblLegacyMode (bool on);
 char mapRTC2Legacy (char c);
+
+#endif
+
+#ifdef PARSER_I2C_ENABLE
+
+typedef struct {
+    size_t len;
+    uint8_t data[256];
+} i2c_rxdata_t;
+
+void grblPollI2C (void);
+
+extern i2c_rxdata_t *i2c_rx_poll (void);
+
+#endif
+
+grbl_data_t *setGrblReceiveCallback (grbl_callback_ptr fn);
+
+/**/
+
+uint32_t lcd_systicks (void);
+
+#ifdef PARSER_SERIAL_ENABLE
+
+extern int16_t serial_getC (void);
+extern void serial_writeLn (const char *data);
+extern void serial_RxCancel (void);
+
+#endif
 
 #endif

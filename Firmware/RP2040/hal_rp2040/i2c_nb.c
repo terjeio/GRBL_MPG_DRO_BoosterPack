@@ -3,12 +3,12 @@
  *
  * Part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.2 / 2022-01-05 / (c) Io Engineering / Terje
+ * v0.0.3 / 2023-02-26 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2021-2022, Terje Io
+Copyright (c) 2021-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -41,6 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "hardware/irq.h"
+#include "pico/i2c_slave.h"
 
 #include "i2c_nb.h"
 #include "driver.h"
@@ -83,7 +84,7 @@ static volatile bool i2cBusy = false;
 static i2c_hw_t *slave;
 static i2c_master_trans_t i2c_m;
 
-static void slave_interrupt_handler (void);
+static void i2c_slave_handler (i2c_inst_t *i2c, i2c_slave_event_t event);
 
 void i2c_nb_init (void)
 {
@@ -93,18 +94,38 @@ void i2c_nb_init (void)
     gpio_pull_up(MASTER_SDA_PIN);
     gpio_pull_up(MASTER_SCL_PIN);
 
-    i2c_init(I2C_SLAVE, 100 * 1000);
-    i2c_set_slave_mode(I2C_SLAVE, true, KEYPAD_I2CADDR);
     gpio_set_function(SLAVE_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(SLAVE_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(SLAVE_SCL_PIN);
+    gpio_pull_up(SLAVE_SDA_PIN);
     gpio_pull_up(SLAVE_SCL_PIN);
 
-    slave = I2C_SLAVE->hw;
-    slave->intr_mask = (I2C_IC_INTR_MASK_M_RD_REQ_BITS);
-    irq_set_exclusive_handler(I2C_SLAVE_IRQ, slave_interrupt_handler);
-    irq_set_enabled(I2C_SLAVE_IRQ, true);
+    i2c_slave_init(I2C_SLAVE, KEYPAD_I2CADDR, i2c_slave_handler);
 }
+
+#ifdef PARSER_I2C_ENABLE
+
+static struct {
+    bool packet_received;
+    i2c_rxdata_t rx;
+} i2c_s = {0};
+
+i2c_rxdata_t *i2c_rx_poll (void)
+{
+    static i2c_rxdata_t rxdata;
+
+    if(i2c_s.packet_received) {
+        memcpy(&rxdata, &i2c_s.rx, i2c_s.rx.len + sizeof(size_t));
+        i2c_s.rx.len = 0;
+        i2c_s.packet_received = false;
+    } else
+        rxdata.len = 0;
+
+    return rxdata.len ? &rxdata : NULL;
+}
+
+#endif
+
+#if UILIB_KEYPAD_ENABLE
 
 // get single byte - via interrupt
 void i2c_getSWKeycode (on_keyclick_ptr callback)
@@ -123,6 +144,8 @@ void i2c_getSWKeycode (on_keyclick_ptr callback)
    }
 }
 
+#endif
+
 void i2c_nb_send (uint32_t i2cAddr, const uint8_t value)
 {
     while(i2cIsBusy);
@@ -137,95 +160,44 @@ void i2c_nb_send_n (uint32_t i2cAddr, const uint8_t *data, uint32_t bytes)
     i2c_write_blocking(I2C_MASTER, i2cAddr, data, bytes, false);
 }
 
-static void slave_interrupt_handler (void)
+static void i2c_slave_handler (i2c_inst_t *i2c, i2c_slave_event_t event)
 {
-    uint32_t iflags = slave->intr_stat;
+    switch(event) {
 
-    if (iflags & I2C_IC_INTR_STAT_R_RD_REQ_BITS) {
+#ifdef PARSER_I2C_ENABLE
 
-        keyevent_t *keypress = keypad_get_forward_key();
+        case I2C_SLAVE_RECEIVE:
+            if(!i2c_s.packet_received && i2c_s.rx.len < sizeof(i2c_s.rx.data))
+                i2c_s.rx.data[i2c_s.rx.len++] = i2c_read_byte_raw(i2c);
+            else
+                i2c_read_byte_raw(i2c);
+            break;
 
-        slave->data_cmd = keypress->keycode;
+        case I2C_SLAVE_FINISH:
+            i2c_s.packet_received = i2c_s.rx.len != 0;
+            break;
 
-        if(keypress->claimed) {
-            keypress->keycode = 0;
-            if(!keypad_isKeydown()) {
-                keypress->claimed = false;
+#endif
+
+#if UILIB_KEYPAD_ENABLE
+
+        case I2C_SLAVE_REQUEST:;
+            keyevent_t *keypress = keypad_get_forward_key();
+
+            i2c_write_byte_raw(i2c, keypress->keycode);
+            
+            if(keypress->claimed) {
+                keypress->keycode = 0;
+                if(!keypad_isKeydown()) {
+                    keypress->claimed = false;
+                    keypad_setFwd(false);
+                }
+            } else
                 keypad_setFwd(false);
-            }
-        } else
-            keypad_setFwd(false);
+            break;
+#endif
+
+        default:
+            break;
     }
-
-    slave->clr_rd_req;
-
-  /*  
-
-    if(ifg == I2C_SLAVE_INT_STOP) {
-        if!(i2c_s.claimed && keyforward.tail != keyforward.head)
-            GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0);
-    }*/
-}
-
-static void master_interrupt_handler (void)
-{
-    // based on code from https://e2e.ti.com/support/microcontrollers/tiva_arm/f/908/t/169882
-
-  //  I2CMasterIntClear(I2C1_BASE);
-
-//    if(I2CMasterErr(I2C1_BASE) == I2C_MASTER_ERR_NONE)
-/*
-    switch(i2c_m.state) {
-
-        case I2CState_Idle:
-            break;
-
-        case I2CState_SendNext:
-            I2CMasterDataPut(I2C1_BASE, *i2c_m.data++);
-            if(--i2c_m.count == 1)
-                i2c_m.state = I2CState_SendLast;
-
-            I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_SEND_CONT);
-            break;
-
-        case I2CState_SendLast:
-            I2CMasterDataPut(I2C1_BASE, *i2c_m.data);
-            I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_SEND_FINISH);
-
-            i2c_m.state = I2CState_AwaitCompletion;
-            break;
-
-        case I2CState_AwaitCompletion:
-            i2c_m.count = 0;
-            i2c_m.state = I2CState_Idle;
-            break;
-
-        case I2CState_ReceiveNext:
-            *i2c_m.data++ = I2CMasterDataGet(I2C1_BASE);
-            I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_RECEIVE_CONT);
-
-            if(--i2c_m.count == 2)
-                i2c_m.state = I2CState_ReceiveNextToLast;
-            break;
-
-        case I2CState_ReceiveNextToLast:
-            *i2c_m.data++ = I2CMasterDataGet(I2C1_BASE);
-            I2CMasterControl(I2C1_BASE, I2C_MASTER_CMD_BURST_RECEIVE_FINISH);
-
-            i2c_m.count--;
-            i2c_m.state = I2CState_ReceiveLast;
-            break;
-
-        case I2CState_ReceiveLast:
-            *i2c_m.data = I2CMasterDataGet(I2C1_BASE);
-            i2c_m.count = 0;
-            i2c_m.state = I2CState_Idle;
-
-            if(i2c_m.getKeycode && *i2c_m.data != 0) {
-                //  if(GPIOIntStatus(KEYINTR_PORT, KEYINTR_PIN) != 0) { // only add keycode when key is still pressed
-                enqueue_keycode(*i2c_m.data);
-                i2c_m.getKeycode = false;
-            }
-            break;
-    } */
 }

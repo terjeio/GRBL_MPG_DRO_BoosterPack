@@ -1,4 +1,7 @@
-## GRBL MPG & DRO BoosterPack for Tiva C \(TM4C123G\)
+## GRBL MPG & DRO BoosterPack for Tiva C \(TM4C123G\) and RP2040 (Pi Pico)
+
+__2024-01-29:__ Added firmware and flasher code for the MSP430 keypad controller to the RP2040 version. This will check for and install/update the firmware automatically.  
+Splitted LCD driver code in separate files for each display type supported.
 
 __2022-01-13:__ Added wiring diagram for default key and LED map.
 

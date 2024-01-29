@@ -12,21 +12,20 @@
 #ifndef LCD_H_
 #define LCD_H_
 
+#include "config.h"
+
+#if defined(ILI9340) || defined(ILI9341)
+
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "config.h"
 #include "graphics.h"
 
 //#define DPYCOLORTRANSLATE(c) ((((c) & 0x00f80000) >> 8) | (((c) & 0x0000fc00) >> 5) | (((c) & 0x000000f8) >> 3))
 #define DPYCOLORTRANSLATE(c) ((((c) & 0x00001C00) << 3)| (((c) & 0x000000f8) << 5) | (((c) & 0x00f80000) >> 16) | (((c) & 0x0000e000) >> 13))
 
-#if defined ILI9340
-//
 #define LCD_OFFSET_HEIGHT 0
 #define LCD_OFFSET_WIDTH 0
-//
-#endif
 
 // panel size
 #define LONG_EDGE_PIXELS 320
@@ -98,4 +97,5 @@
 #define ILIGFD          0xF2
 #define PRC             0xF7
 
+#endif
 #endif /* LCD_H_ */

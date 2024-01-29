@@ -9,8 +9,11 @@
  * Modified by Terje Io to use weakly defined functions for hw driver layer
  */
 
-#include "lcd.h"
 #include "config.h"
+
+#if defined(ILI9340) || defined(ILI9341)
+
+#include "ili934x.h"
 #include "Touch/touch.h"
 
 static const unsigned char gamma1[] = {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00};
@@ -190,4 +193,5 @@ uint16_t lcd_readID()
     return id;
 }
 
+#endif
 #endif

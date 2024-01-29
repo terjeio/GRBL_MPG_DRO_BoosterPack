@@ -41,10 +41,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 
 #include "config.h"
-#include "grbl.h"
 #include "keypad.h"
 #include "interface.h"
-#include "grblcomm.h"
+#include "grbl/grbl.h"
 
 #define KEYBUF_SIZE 16
 
@@ -171,7 +170,7 @@ void keypad_enqueue_keycode (bool down, char c)
         return;
     }
 
-#ifdef UART_MODE
+#if UART_MODE
     if(c == '\r') {
         serial_putC(CMD_MPG_MODE_TOGGLE);
         return;
@@ -449,7 +448,7 @@ jogmode_t keypadJogModeNext (void) {
 
     jogMode = jogMode == JogMode_Step ? JogMode_Fast : (jogMode == JogMode_Fast ? JogMode_Slow : JogMode_Step);
 
-#ifdef UART_MODE
+#if UART_MODE
     if(keyevent.forward && !grblIsMPGActive())
         serial_putC('0' + (char)jogMode);
 #else

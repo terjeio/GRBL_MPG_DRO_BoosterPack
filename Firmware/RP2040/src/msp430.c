@@ -1,12 +1,14 @@
 /*
- * main.c - MPG/DRO for grbl on a secondary processor
+ * msp430.c - HAL driver for Raspberry RP2040 ARM processor
  *
- * v0.0.4 / 2023-03-07 / (c) Io Engineering / Terje
+ * Part of MPG/DRO for grbl on a secondary processor
+ *
+ * v0.0.1 / 2024-01-29 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2023, Terje Io
+Copyright (c) 2024, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -36,57 +38,34 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <math.h>
+#include "../msp430/JTAGfunc430.h"           // JTAG functions
+#include "../msp430/LowLevelFuncRP2040.h"    // low level functions
+#include "../msp430/Devices430.h"            // holds Device specific information
+#include "msp430_firmware.h"              // holds Keypad Controller firmware
 
-#include "LCD/graphics.h"
-#include "UILib/uilib.h"
-#include "canvas/boot.h"
-#include "canvas/dro.h"
-#include "grbl/parser.h"
-#include "interface.h"
-
-extern bool flashKeypadController (void);
-
-void main (void)
+bool flashKeypadController (void)
 {
-    lcd_display_t *screen;
+    bool ok;
 
-    hal_init();
+    InitController();                           // Initialize the RP2040 host for SBW
+    InitTarget();                               // Initialize target board
 
-    initGraphics();
+    if(GetDevice() != STATUS_OK)                // Set DeviceId
+        return false;                           // stop here if invalid JTAG ID or time-out.
 
-    setOrientation(Orientation_Horizontal);
-    UILibInit();
-    UILibSetTabnav(6);
-
-//    TOUCH_Calibrate();
-
-    flashKeypadController();
-
-    clearScreen(true);
-
-    screen = getDisplayDescriptor();
-
-    BOOTShowCanvas(screen);
-
-    navigator_setLimits(0, screen->Height);
-
-    DROInitCanvas();
-    DROShowCanvas(screen);
-
-    while(true) {
-#ifdef PARSER_SERIAL_ENABLE
-        grblPollSerial();
-#endif
-#ifdef PARSER_I2C_ENABLE
-        grblPollI2C();
-#endif
-        DROProcessEvents();
-        UILibProcessEvents();
+    if(!(ok = ReadMem(F_WORD, 0x1080) == 2)) {  // Check firmware version in infoB
+        EraseFLASH(ERASE_SGMT, 0x1080);         // Mass-Erase InfoB
+        EraseFLASH(ERASE_MAIN, 0xC000);         // Mass-Erase Flash
+        if(!EraseCheck(0xC000, 0x2000)) {
+            ReleaseDevice(V_RESET);
+            return false;
+        }
     }
+
+    if(!ok)
+        ok = WriteFLASHallSections(eprom, eprom_address, eprom_length_of_sections, eprom_sections);
+
+    ReleaseDevice(V_RESET);
+
+    return ok;
 }

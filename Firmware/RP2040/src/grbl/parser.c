@@ -1,14 +1,13 @@
 /*
- * grblcomm.c - collects, parses and dispatches lines of data from grbls serial output stream
+ * parser.c - collects, parses and dispatches lines of data from
+ *            grbls serial output stream and/or i2c display protocol
  *
- * part of MPG/DRO for grbl on a secondary processor
- *
- * v0.0.3 / 2022-01-28 / (c) Io Engineering / Terje
+ * v0.0.6 / 2023-08-11 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2022, Terje Io
+Copyright (c) 2018-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -40,16 +39,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <math.h>
 
-#include "LCD/graphics.h"
-#include "grblcomm.h"
-
-#define SERIAL_NO_DATA -1
-#define MAX_BLOCK_LENGTH 256
+#include "parser.h"
+#include "i2c_interface.h"
 
 // This array must match the grbl_state_t enum in grblcomm.h!
 const char *const grblState[NUMSTATES] = {
@@ -66,7 +63,7 @@ const char *const grblState[NUMSTATES] = {
     "Sleep"
 };
 
-// This array must match the grbl_state_t in grblcomm.h!
+// This array must match the grbl_state_t in parser.h!
 const RGBColor_t grblStateColor[NUMSTATES] = {
     Black,
     White,
@@ -82,70 +79,56 @@ const RGBColor_t grblStateColor[NUMSTATES] = {
 };
 
 static grbl_data_t grbl_data = {
-    .changed          = (uint32_t)-1,
-    .position         = {0.0f, 0.0f, 0.0f},
-    .offset           = {0.0f, 0.0f, 0.0f},
-    .absDistance      = true,
-    .xModeDiameter    = false,
-    .feed_override    = 0,
-    .rapid_override   = 0,
-    .grbl.state       = Unknown,
-    .grbl.state_color = White,
-    .grbl.state_text  = "",
-    .grbl.substate    = 0,
-    .mpgMode          = false,
-    .alarm            = 0,
-    .error            = 0,
-    .pins             = "",
-    .message          = "",
-    .useWPos          = false,
-    .awaitWCO         = true,
-    .spindle.on       = false,
-    .spindle.ccw      = false,
-    .coolant.mist     = false,
-    .coolant.flood    = false
+    .n_axis               = 3,
+    .changed              = (uint32_t)-1,
+    .position             = {0.0f, 0.0f, 0.0f},
+    .offset               = {0.0f, 0.0f, 0.0f},
+    .absDistance          = true,
+    .xModeDiameter        = false,
+    .override.feed_rate   = 100,
+    .override.rapid_rate  = 100,
+    .override.spindle_rpm = 100,
+    .grbl.state           = Unknown,
+    .grbl.state_color     = White,
+    .grbl.state_text      = "",
+    .grbl.substate        = 0,
+    .mpgMode              = false,
+    .alarm                = 0,
+    .error                = 0,
+    .pins                 = "",
+    .message              = "",
+    .useWPos              = false,
+    .awaitWCO             = true,
+    .spindle.state        = {0},
+    .coolant              = {0}
 };
 
+#ifdef PARSER_SERIAL_ENABLE
 static void parseData (char *block);
-
-settings_t settings = {
-    .spindle.rpm     = 0.0f,
-    .spindle.mpg_rpm = 200.0f,
-    .spindle.rpm_min = 0.0f,
-    .spindle.rpm_max = 1000.0f,
-    .jog_config.step_speed    = 100.0f,
-    .jog_config.slow_speed    = 600.0f,
-    .jog_config.fast_speed    = 3000.0f,
-    .jog_config.step_distance = 0.1f,
-    .jog_config.slow_distance = 500.0f,
-    .jog_config.fast_distance = 500.0f
-};
-
-static grbl_info_t grbl_info = {
-    .options = {0},
-    .device  = "grblHAL MPG & DRO",
-};
+static void (*grblTransmitCallback)(bool ok, grbl_data_t *grbl_data) = NULL;
+static grbl_settings_received_ptr on_settings_received = NULL;
+#endif
 
 static struct {
+    grbl_callback_ptr on_report_received;
+#ifdef PARSER_SERIAL_ENABLE
     grbl_settings_received_ptr on_settings_received;
     grbl_info_received_ptr on_info_received;
-    grbl_callback_ptr on_report_received;
     grbl_sd_files_received_ptr on_sd_files_received;
     grbl_callback_ptr on_line_received;
+#endif
 } grbl_event = {
+    .on_report_received = NULL,
+#ifdef PARSER_SERIAL_ENABLE
     .on_settings_received = NULL,
     .on_info_received = NULL,
-    .on_report_received = NULL,
     .on_sd_files_received = NULL,
     .on_line_received = parseData
+#endif
 };
-
-static sd_files_t sd_files = {0};
 
 static bool legacy_rt_commands = true;
 static volatile bool ack_received = false, await = false;
-static void (*grblTransmitCallback)(bool ok, grbl_data_t *grbl_data) = 0;
-grbl_settings_received_ptr on_settings_received = NULL;
 
 void setGrblLegacyMode (bool on)
 {
@@ -175,7 +158,9 @@ char mapRTC2Legacy (char c)
 grbl_data_t *setGrblReceiveCallback (grbl_callback_ptr fn)
 {
     grbl_event.on_report_received = fn;
+#ifdef PARSER_SERIAL_ENABLE
     grblTransmitCallback = NULL;
+#endif
     grbl_data.changed.flags = (uint32_t)-1;
     grbl_data.changed.await_ack = grbl_data.changed.reset = false;
     grbl_data.changed.unassigned = 0;
@@ -183,10 +168,42 @@ grbl_data_t *setGrblReceiveCallback (grbl_callback_ptr fn)
     return &grbl_data;
 }
 
+static void setLeds (grbl_state_t state)
+{
+    leds_t leds = (leds_t){ grbl_data.leds.value };
+
+    leds.run = state == Run || state == Jog;
+    leds.hold = state == Hold;
+    if(grbl_data.changed.leds = grbl_data.leds.value != leds.value)
+        grbl_data.leds = leds;
+}
+
 bool grblIsMPGActive (void)
 {
     return grbl_data.mpgMode;
 }
+
+#ifdef PARSER_SERIAL_ENABLE
+
+settings_t settings = {
+    .spindle.rpm     = 0.0f,
+    .spindle.mpg_rpm = 200.0f,
+    .spindle.rpm_min = 0.0f,
+    .spindle.rpm_max = 1000.0f,
+    .jog_config.step_speed    = 100.0f,
+    .jog_config.slow_speed    = 600.0f,
+    .jog_config.fast_speed    = 3000.0f,
+    .jog_config.step_distance = 0.1f,
+    .jog_config.slow_distance = 500.0f,
+    .jog_config.fast_distance = 500.0f
+};
+
+static grbl_info_t grbl_info = {
+    .options = {0},
+    .device  = "grblHAL MPG & DRO",
+};
+
+static sd_files_t sd_files = {0};
 
 static void processReply (char *line)
 {
@@ -226,6 +243,17 @@ static bool parseInt (int32_t *value, char *data)
     return changed;
 }
 
+static bool parseUint (uint32_t *value, char *data)
+{
+    bool changed;
+
+    uint32_t val = (uint32_t)atoi(data);
+    if((changed = val != *value))
+        *value = val;
+
+    return changed;
+}
+
 static void parsePositions (char *data)
 {
     char *next;
@@ -233,17 +261,17 @@ static void parsePositions (char *data)
     next = strchr(data, ',');
     *next++ = '\0';
 
-    if(parseDecimal(&grbl_data.position[X_AXIS], data))
+    if(parseDecimal(&grbl_data.position.x, data))
         grbl_data.changed.xpos = true;
 
     data = next;
     next = strchr(data, ',');
     *next++ = '\0';
 
-    if(parseDecimal(&grbl_data.position[Y_AXIS], data))
+    if(parseDecimal(&grbl_data.position.y, data))
         grbl_data.changed.ypos = true;
 
-    if(parseDecimal(&grbl_data.position[Z_AXIS], next))
+    if(parseDecimal(&grbl_data.position.z, next))
         grbl_data.changed.zpos = true;
 }
 
@@ -251,13 +279,13 @@ static void parseOffsets (char *data)
 {
     if(grbl_data.useWPos) {
 
-        grbl_data.changed.offset = grbl_data.offset[X_AXIS] != 0.0f ||
-                                    grbl_data.offset[Y_AXIS] != 0.0f ||
-                                     grbl_data.offset[Z_AXIS] != 0.0f;
+        grbl_data.changed.offset = grbl_data.offset.x != 0.0f ||
+                                    grbl_data.offset.y != 0.0f ||
+                                     grbl_data.offset.z != 0.0f;
 
-        grbl_data.offset[X_AXIS] =
-        grbl_data.offset[Y_AXIS] =
-        grbl_data.offset[Z_AXIS] = 0.0f;
+        grbl_data.offset.x =
+        grbl_data.offset.y =
+        grbl_data.offset.z = 0.0f;
 
     } else {
 
@@ -266,17 +294,17 @@ static void parseOffsets (char *data)
         next = strchr(data, ',');
         *next++ = '\0';
 
-        if(parseDecimal(&grbl_data.offset[X_AXIS], data))
+        if(parseDecimal(&grbl_data.offset.x, data))
             grbl_data.changed.offset = true;
 
         data = next;
         next = strchr(data, ',');
         *next++ = '\0';
 
-        if(parseDecimal(&grbl_data.offset[Y_AXIS], data))
+        if(parseDecimal(&grbl_data.offset.y, data))
             grbl_data.changed.offset = true;
 
-        if(parseDecimal(&grbl_data.offset[Z_AXIS], next))
+        if(parseDecimal(&grbl_data.offset.z, next))
             grbl_data.changed.offset = true;
     }
 
@@ -291,17 +319,17 @@ static void parseOverrides (char *data)
     next = strchr(data, ',');
     *next++ = '\0';
 
-    if(parseInt(&grbl_data.feed_override, data))
+    if(parseUint(&grbl_data.override.feed_rate, data))
         grbl_data.changed.feed_override = true;
 
     data = next;
     next = strchr(data, ',');
     *next++ = '\0';
 
-    if(parseInt(&grbl_data.rapid_override, data))
+    if(parseUint(&grbl_data.override.rapid_rate, data))
         grbl_data.changed.rapid_override = true;
 
-    if(parseInt(&grbl_data.spindle.rpm_override, next))
+    if(parseUint(&grbl_data.override.spindle_rpm, next))
         grbl_data.changed.rpm_override = true;
 }
 
@@ -358,6 +386,8 @@ static void parseData (char *block)
 
                 grbl_data.changed.state = true;
 
+                setLeds(grbl_data.grbl.state);
+
                 if(!(grbl_data.grbl.state == Alarm || grbl_data.grbl.state == Tool) && grbl_data.message[0] != '\0')
                     grblClearMessage();
             }
@@ -402,8 +432,8 @@ static void parseData (char *block)
             } else if(!strncmp(line, "A:", 2)) {
 
                 line = &line[2];
-                grbl_data.spindle.on =
-                grbl_data.spindle.ccw =
+                grbl_data.spindle.state.on =
+                grbl_data.spindle.state.ccw =
                 grbl_data.coolant.flood =
                 grbl_data.coolant.mist = false;
                 grbl_data.changed.leds = true;
@@ -420,13 +450,13 @@ static void parseData (char *block)
                             break;
 
                         case 'S':
-                            grbl_data.spindle.ccw = false;
-                            grbl_data.spindle.on = true;
+                            grbl_data.spindle.state.ccw = false;
+                            grbl_data.spindle.state.on = true;
                             break;
 
                         case 'C':
-                           grbl_data.spindle.ccw = true;
-                           grbl_data.spindle.on = true;
+                           grbl_data.spindle.state.ccw = true;
+                           grbl_data.spindle.state.on = true;
                            break;
                     }
                 }
@@ -434,15 +464,30 @@ static void parseData (char *block)
             } else if(!strncmp(line, "Ov:", 3))
                 parseOverrides(line + 3);
 
-            else if(!strncmp(line, "MPG:", 4)) {
-                if(grbl_data.mpgMode != (line[4] == '1')) {
+            else if(!strcmp(line, "AR") || !strncmp(line, "AR:", 3)) {
+                grbl_data.autoReporting = true;
+                if(line[2] == ':')
+                    grbl_data.changed.auto_reporting = parseUint(&grbl_data.autoReportingInterval, &line[3]);
+                else {
+                    grbl_data.changed.auto_reporting = grbl_data.autoReportingInterval != 0;
+                    grbl_data.autoReportingInterval = 0;
+                }
+            } else if(!strncmp(line, "MPG:", 4)) {
+                if((grbl_data.changed.mpg = grbl_data.mpgMode != (line[4] == '1'))) {
                     grbl_data.mpgMode = !grbl_data.mpgMode;
-                    grbl_data.changed.mpg = true;
                     grbl_event.on_line_received = parseData;
                 }
+
             } else if(!strncmp(line, "SD:", 3)) {
                 if((grbl_data.changed.message = !!strcmp(grbl_data.message, line + 3)))
-                    strncpy(grbl_data.message, line + 3, 250);
+                    strncpy(grbl_data.message, line + 3, sizeof(grbl_data.message) - 1);
+
+            } else if(!strncmp(line, "TLR:", 4)) {
+                if((grbl_data.changed.tlo_reference = grbl_data.tloReferenced != (line[4] == '1'))) {
+                    grbl_data.tloReferenced = !grbl_data.tloReferenced;
+                    grbl_data.changed.leds = true;
+                    grbl_data.leds.tlo_refd = grbl_data.changed.tlo_reference;
+                }
             }
 
             line = strtok(NULL, "|");
@@ -486,36 +531,36 @@ static void parseData (char *block)
                 }
 
                 if(!strncmp(line, "M5", 2)) {
-                    if(grbl_data.spindle.on)
+                    if(grbl_data.spindle.state.on)
                         grbl_data.changed.leds = true;
-                    grbl_data.spindle.on = false;
+                    grbl_data.spindle.state.on = grbl_data.leds.spindle = false;
                 } else if(!strncmp(line, "M3", 2)) {
-                    if(!grbl_data.spindle.on || grbl_data.spindle.ccw)
+                    if(!grbl_data.spindle.state.on || grbl_data.spindle.state.ccw)
                         grbl_data.changed.leds = true;
-                    grbl_data.spindle.on = true;
-                    grbl_data.spindle.ccw = false;
+                    grbl_data.spindle.state.on = grbl_data.leds.spindle = true;
+                    grbl_data.spindle.state.ccw = false;
                 } else if(!strncmp(line, "M4", 2)) {
-                    if(!grbl_data.spindle.on || !grbl_data.spindle.ccw)
+                    if(!grbl_data.spindle.state.on || !grbl_data.spindle.state.ccw)
                         grbl_data.changed.leds = true;
-                    grbl_data.spindle.on = true;
-                    grbl_data.spindle.ccw = true;
+                    grbl_data.spindle.state.on = grbl_data.leds.spindle = true;
+                    grbl_data.spindle.state.ccw = true;
                 }
 
                 if(!strncmp(line, "M9", 2)) {
                     if(grbl_data.coolant.mist || grbl_data.coolant.flood)
                         grbl_data.changed.leds = true;
-                    grbl_data.coolant.mist = false;
-                    grbl_data.coolant.flood = false;
+                    grbl_data.coolant.mist = grbl_data.leds.mist = false;
+                    grbl_data.coolant.flood = grbl_data.leds.flood = false;
                 } else {
                     if(!strncmp(line, "M7", 2)) {
                         if(!grbl_data.coolant.mist)
                             grbl_data.changed.leds = true;
-                        grbl_data.coolant.mist = true;
+                        grbl_data.coolant.mist = grbl_data.leds.mist = true;
                     }
                     if(!strncmp(line, "M8", 2)) {
-                        if(!grbl_data.coolant.mist)
+                        if(!grbl_data.coolant.flood)
                             grbl_data.changed.leds = true;
-                        grbl_data.coolant.flood = true;
+                        grbl_data.coolant.flood = grbl_data.leds.flood = true;
                     }
                 }
                 line = strtok(NULL, " ");
@@ -839,3 +884,196 @@ void grblPollSerial (void)
             grbl_data.block[char_counter++] = (char)c;
     }
 }
+
+__attribute__((weak)) int16_t serial_getC (void) { return SERIAL_NO_DATA; }
+__attribute__((weak)) void serial_writeLn (const char *data) {}
+__attribute__((weak)) void serial_RxCancel (void);
+
+#endif // PARSER_SERIAL_ENABLE
+
+/* I2C display plugin protocol parser */
+
+#ifdef PARSER_I2C_ENABLE
+
+static char *spins (control_signals_t signals)
+{
+    static const char pinmap[] = "RHSDLTE FM    P ";
+    static char pins[17];
+
+    char *s = pins, *map = (char *)pinmap;
+
+    while(signals.mask) {
+        if((signals.mask & 0x01) & *map != ' ')
+            *s++ = *map;
+        map++;
+        signals.mask >>= 1;
+    }   
+    *s = '\0';
+
+    return pins;
+}
+
+void grblPollI2C (void)
+{
+    uint_fast8_t idx;
+    i2c_rxdata_t *i2c_msg; 
+    grbl_state_t state;
+    machine_status_packet_t *packet;
+
+    if((i2c_msg = i2c_rx_poll()) == NULL)
+        return;
+
+    if(i2c_msg->len < offsetof(machine_status_packet_t, msgtype))
+        return;
+
+    packet = (machine_status_packet_t *)i2c_msg->data;
+
+    switch(packet->machine_state) {
+
+        case MachineState_Alarm:
+            state = Alarm;
+            break;
+
+        case MachineState_Cycle:
+            state = Run;
+            if((grbl_data.changed.message = *grbl_data.message != '\0'))
+                *grbl_data.message = '\0';
+            break;
+
+        case MachineState_Hold:
+            state = Hold;
+            break;
+
+        case MachineState_ToolChange:
+            state = Tool;
+            break;
+
+        case MachineState_Idle:
+            state = Idle;
+            break;
+
+        case MachineState_Homing:
+            state = Home;
+            break;
+
+        case MachineState_Jog:
+            state = Jog;
+            if((grbl_data.changed.message = *grbl_data.message != '\0'))
+                *grbl_data.message = '\0';
+            break;
+
+        default:
+            state = Unknown;
+            break;
+    }
+
+    if((grbl_data.changed.state = grbl_data.grbl.state != state)) {
+
+        grbl_data.grbl.state = state;
+        grbl_data.grbl.substate = packet->machine_substate;
+        grbl_data.grbl.state_color = grblStateColor[state];
+        strcpy(grbl_data.grbl.state_text, grblState[state]);
+
+        setLeds(grbl_data.grbl.state);
+    }
+
+    if(i2c_msg->len >= offsetof(machine_status_packet_t, msg) && packet->msgtype) {
+
+        switch(packet->msgtype) {
+
+            case MachineMsg_ClearMessage:
+                if((grbl_data.changed.message = *grbl_data.message != '\0'))
+                    *grbl_data.message = '\0';
+                break;
+
+            case MachineMsg_WorkOffset:
+                grbl_data.changed.offset = true;
+                memcpy(&grbl_data.offset, (machine_coords_t *)packet->msg, sizeof(grbl_data.offset));
+                break;
+
+            case MachineMsg_Overrides:
+                {
+                    overrides_t override;
+                    memcpy(&override, packet->msg, sizeof(overrides_t)); // RP2040 (ARM M0) hard faults on unaligned read
+                    if((grbl_data.changed.feed_override = grbl_data.override.feed_rate != override.feed_rate))
+                        grbl_data.override.feed_rate = override.feed_rate;
+                    if((grbl_data.changed.rapid_override = grbl_data.override.rapid_rate != override.rapid_rate))
+                        grbl_data.override.rapid_rate = override.rapid_rate;
+                    if((grbl_data.changed.rpm_override = grbl_data.override.spindle_rpm != override.spindle_rpm))
+                        grbl_data.override.spindle_rpm = override.spindle_rpm;
+                }
+                break;
+
+            default:
+                if(packet->msgtype < 128) { // string message
+                    grbl_data.changed.message = true;
+                    packet->msg[packet->msgtype] = '\0';
+                    strcpy(grbl_data.message, (char *)packet->msg);
+                } // else unhandled message type
+                break;
+        }
+    }
+
+    idx = grbl_data.n_axis;
+
+    do {
+        idx--;
+        if(grbl_data.position.values[idx] != packet->coordinate.values[idx]) {
+            grbl_data.changed.flags |= 1 << idx;
+            grbl_data.position.values[idx] = packet->coordinate.values[idx];
+        }
+    } while(idx);
+
+    if((grbl_data.changed.feed = grbl_data.feed_rate != packet->feed_rate))
+        grbl_data.feed_rate = packet->feed_rate;
+
+    if((grbl_data.changed.error = grbl_data.error != packet->status_code))
+        grbl_data.error = packet->status_code;
+
+    if((grbl_data.changed.coolant = grbl_data.coolant.value != packet->coolant_state.value)) {
+        grbl_data.changed.leds = true;
+        grbl_data.leds.mist = packet->coolant_state.mist;
+        grbl_data.leds.flood = packet->coolant_state.flood;
+        grbl_data.coolant = packet->coolant_state;
+    }
+
+    if((grbl_data.changed.spindle = grbl_data.spindle.state.value != packet->spindle_state.value)) {
+        grbl_data.changed.leds = true;
+        if(!(grbl_data.leds.spindle = packet->spindle_state.on))
+            grbl_data.spindle.rpm_actual = 0.0f;
+        grbl_data.spindle.state = packet->spindle_state;
+    }
+
+    if((grbl_data.changed.rpm = (grbl_data.spindle.state.on ? grbl_data.spindle.rpm_actual : grbl_data.spindle.rpm_programmed) != (float)packet->spindle_rpm)) {
+        if(grbl_data.spindle.state.on)
+            grbl_data.spindle.rpm_actual = (float)packet->spindle_rpm;
+        else
+            grbl_data.spindle.rpm_programmed = (float)packet->spindle_rpm;
+    }
+
+    char *pins = spins(packet->signals);
+    if((grbl_data.changed.pins = !!strcmp(grbl_data.pins, pins)))
+        strcpy(grbl_data.pins, pins);
+
+    if((grbl_data.changed.mpg = grbl_data.mpgMode != packet->machine_modes.mpg))
+        grbl_data.mpgMode = packet->machine_modes.mpg;
+
+    if((grbl_data.changed.tlo_reference = grbl_data.tloReferenced != packet->machine_modes.tlo_referenced)) {
+        grbl_data.tloReferenced = packet->machine_modes.tlo_referenced;
+        grbl_data.changed.leds = true;
+        grbl_data.leds.tlo_refd = grbl_data.changed.tlo_reference;
+    }
+
+    if((grbl_data.changed.xmode = grbl_data.xModeDiameter != packet->machine_modes.diameter))
+        grbl_data.xModeDiameter = packet->machine_modes.diameter;
+
+    if((grbl_data.changed.jog_mode = grbl_data.jog_mode.value != packet->jog_mode.value))
+        grbl_data.jog_mode = packet->jog_mode;
+
+    if(grbl_event.on_report_received && grbl_data.changed.flags)
+        grbl_event.on_report_received(grbl_data.block);
+}
+
+__attribute__((weak)) i2c_rxdata_t *i2c_rx_poll (void) { return NULL; }
+
+#endif // PARSER_I2C_ENABLE

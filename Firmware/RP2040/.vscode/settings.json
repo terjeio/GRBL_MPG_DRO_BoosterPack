@@ -1,6 +1,5 @@
 {
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-    "editor.fontSize": 12,
     "files.associations": {
         "irq.h": "c",
         "i2c.h": "c",
@@ -14,6 +13,16 @@
         "driver.h": "c",
         "interface.h": "c",
         "encoder.pio.h": "c",
-        "config.h": "c"
-    }
+        "config.h": "c",
+        "systick.h": "c",
+        "type_traits": "c",
+        "math.h": "c",
+        "stdio.h": "c",
+        "stdlib.h": "c",
+        "grblcomm.h": "c",
+        "arial_48x55.h": "c",
+        "parser.h": "c",
+        "devices430.h": "c"
+    },
+    "telemetry.enableTelemetry": false
 }

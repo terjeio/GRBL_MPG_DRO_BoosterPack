@@ -1,22 +1,51 @@
 /*
- * rp2040.c
+ * driver.c - LCD driver
  *
- *  Created on: Mar 20, 2012
- *      Author: RobG
+ * Part of MPG/DRO for grbl on a secondary processor
+ *
+ * v0.0.4 / 2023-03-07 / (c) Io Engineering / Terje
  */
 
 /*
- * Mods by Terje Io (pointer based API, optimizations, touch support etc)
- */
+
+Copyright (c) 2021-2023, Terje Io
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice, this
+list of conditions and the following disclaimer in the documentation and/or
+other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its contributors may
+be used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*/
+
 
 #include <stdint.h>
 #include <stdbool.h>
 
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
-#include "hardware/structs/systick.h"
 
-#include "../src/LCD/lcd.h"
+#include "../src/LCD/graphics.h"
 
 #include "driver.h"
 
@@ -26,10 +55,7 @@
 #define F_TOUCH     150000
 #define F_TOUCH_CAL 50000
 
-static volatile uint32_t systicks = 0;
 static lcd_driver_t *driver;
-static volatile uint16_t ms_delay;
-static volatile bool pendown = false;
 
 inline static uint8_t readByte (uint8_t cmd)
 {
@@ -38,21 +64,6 @@ inline static uint8_t readByte (uint8_t cmd)
     spi_read_blocking(SPI_PORT, cmd, &buf, 1);
 
     return buf;
-}
-
-uint32_t lcd_systicks (void)
-{
-    return systicks;
-}
-
-/*
- * long delay
- */
-void lcd_delayms (uint16_t ms)
-{
-    ms_delay = ms;
-
-    while(ms_delay);
 }
 
 void lcd_writePixels (uint16_t *pixels, uint32_t length)
@@ -105,6 +116,8 @@ void lcd_writeCommand (uint8_t command)
 }
 
 #ifdef TOUCH_MAXSAMPLES
+
+static volatile bool pendown = false;
 
 /* touch functions: ADS7843 */
 
@@ -171,20 +184,6 @@ static void TouchIntHandler (void)
 
 #endif
 
-/* IRQ Handlers */
-
-// Interrupt handler for 1 ms interval timer
-void isr_systick (void)
-{
-    systicks++;
-
-    if(ms_delay)
-        ms_delay--;
-
-    if(driver->systickCallback)
-        driver->systickCallback();
-}
-
 /* MCU peripherals init */
 
 void lcd_driverInit (lcd_driver_t *drv)
@@ -213,11 +212,6 @@ void lcd_driverInit (lcd_driver_t *drv)
 
     LCD_DESELECT;
     LCD_DC_DATA;
-
-    systick_hw->rvr = 999;
-    systick_hw->cvr = 0;
-    systick_hw->csr = M0PLUS_SYST_CSR_TICKINT_BITS|M0PLUS_SYST_CSR_ENABLE_BITS;
-    // M0PLUS_SYST_CSR_CLKSOURCE_BITS - set to use processor clock
 
 #ifdef TOUCH_CS_PORT
     MAP_GPIOPinTypeGPIOOutput(TOUCH_CS_PORT, TOUCH_CS_PIN);

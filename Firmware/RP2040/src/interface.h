@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.3 / 2022-01-28 / (c) Io Engineering / Terje
+ * v0.0.5 / 2023-03-04 / (c)Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2021-2022, Terje Io
+Copyright (c) 2021-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -44,6 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdbool.h>
 
 #include "keypad.h"
+#include "grbl/parser.h"
 #include "UILib/uilib.h"
 
 typedef union {

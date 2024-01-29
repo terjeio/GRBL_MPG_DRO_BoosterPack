@@ -3,12 +3,12 @@
  *
  * Part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.3 / 2022-01-29 / (c) Io Engineering / Terje
+ * v0.0.4 / 2023-03-04 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2021-2022, Terje Io
+Copyright (c) 2021-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -42,29 +42,48 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
-#include "encoder.pio.h"
+#include "hardware/structs/systick.h"
 
-#include "../src/grbl.h"
+#include "../src/grbl/grbl.h"
 #include "../src/config.h"
 #include "../src/interface.h"
-#include "../src/keypad.h"
 
 #include "i2c_nb.h"
 #include "driver.h"
 
-static qei_t qei = {0}, qei_mpg;
-static mpg_t mpg = {0};
-static mpg_axis_t *mpg_axis;
-
 static leds_t leds_state = {
     .value = 255
 };
+
+#if UILIB_KEYPAD_ENABLE
+
+#include "../src/keypad.h"
+
+#define SHIFT_KEY 0b1000010000
+
 static bool keyDown = false;
-static void encoder_int_handler (void);
-static void mpg_int_handler (void);
 static void keyclick_int_handler (uint gpio, uint32_t events);
+
+static const keypad_key_t kmap[] = {
+    { .key = CMD_STOP, .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000001 }
+/*    { .key = '4', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000001 },
+    { .key = '5', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000010 },
+    { .key = '6', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000100 } */
+};
+
+#endif
+
+#if UILIB_NAVIGATOR_ENABLE
+
+#include "encoder.pio.h"
+
+static void encoder_int_handler (void);
 static void nav_sw_int_handler (uint gpio, uint32_t events);
-static void gpio_int_handler (uint gpio, uint32_t events);
+static void mpg_int_handler (void);
+
+static qei_t qei = {0}, qei_mpg;
+static mpg_t mpg = {0};
+static mpg_axis_t *mpg_axis;
 
 static int enc_sm, mpg_sm;
 
@@ -85,49 +104,45 @@ static const uint8_t MICROSTEP_1  = 0b10;
 static const uint8_t MICROSTEP_2  = 0b11;
 static const uint8_t MICROSTEP_3  = 0b01;
 
-#define SHIFT_KEY 0b1000010000
+#endif
 
-static const keypad_key_t kmap[] = {
-    { .key = CMD_STOP, .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000001 }
-/*    { .key = '4', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000001 },
-    { .key = '5', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000010 },
-    { .key = '6', .type = Keytype_SingleEvent, .scanCode = SHIFT_KEY|0b0100000100 } */
-};
+#if UILIB_KEYPAD_ENABLE || UILIB_NAVIGATOR_ENABLE
+
+static void gpio_int_handler (uint gpio, uint32_t events);
+
+#endif
+
+static volatile uint32_t systicks = 0;
+static volatile uint16_t ms_delay;
+static systick_callbak_ptr systickCallback = NULL;
 
 void hal_init (void)
 {
-    int offset;
 
-    mpg_axis = &mpg.x;
+#if UILIB_KEYPAD_ENABLE
 
     gpio_init(SWD_RESET);
     gpio_set_dir(SWD_RESET, GPIO_OUT);
     gpio_put(SWD_RESET, 0); // Halt MSP430 keypad controller
 
+#endif
+
+    systick_hw->rvr = 999;
+    systick_hw->cvr = 0;
+    systick_hw->csr = M0PLUS_SYST_CSR_TICKINT_BITS|M0PLUS_SYST_CSR_ENABLE_BITS;
+    // M0PLUS_SYST_CSR_CLKSOURCE_BITS - set to use processor clock
+
     i2c_nb_init();
+
+#if UILIB_NAVIGATOR_ENABLE
+
+    int offset;
+
+    mpg_axis = &mpg.x;
 
     gpio_set_irq_enabled_with_callback(NAVIGATOR_SW_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, gpio_int_handler);
     gpio_pull_up(NAVIGATOR_SW_PIN);
     gpio_set_irq_enabled(NAVIGATOR_SW_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
-
-    gpio_pull_up(KEYINTR_PIN);
-    gpio_set_irq_enabled_with_callback(KEYINTR_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, gpio_int_handler);
-
-    gpio_init(KEYFWD_PIN);
-    gpio_set_oeover(KEYFWD_PIN, GPIO_OVERRIDE_LOW); // > to OD // GPIO_OVERRIDE_INVERT does not work!
-    gpio_set_dir(KEYFWD_PIN, GPIO_OUT);
-    gpio_set_pulls(KEYFWD_PIN, false, false);
-    gpio_put(KEYFWD_PIN, 0); // > to OD
-
-    gpio_init(CYCLESTART_PIN);
-    gpio_set_dir(CYCLESTART_PIN, GPIO_OUT);
-    gpio_set_oeover(CYCLESTART_PIN, GPIO_OVERRIDE_LOW); // > to OD
-    gpio_put(CYCLESTART_PIN, 0);
-
-    gpio_init(FEEDHOLD_PIN);
-    gpio_set_dir(FEEDHOLD_PIN, GPIO_OUT);
-    gpio_set_oeover(FEEDHOLD_PIN, GPIO_OVERRIDE_LOW); // > to OD
-    gpio_put(FEEDHOLD_PIN, 0); // > to OD
 
     gpio_init(MPG_MODE_PIN);
 
@@ -151,6 +166,28 @@ void hal_init (void)
     irq_set_exclusive_handler(PIO1_IRQ_0, mpg_int_handler);
     irq_set_enabled(PIO1_IRQ_0, true);
 
+#endif
+
+#if UILIB_KEYPAD_ENABLE
+
+    gpio_pull_up(KEYINTR_PIN);
+    gpio_set_irq_enabled_with_callback(KEYINTR_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, gpio_int_handler);
+
+    gpio_init(KEYFWD_PIN);
+    gpio_set_oeover(KEYFWD_PIN, GPIO_OVERRIDE_LOW); // > to OD // GPIO_OVERRIDE_INVERT does not work!
+    gpio_set_dir(KEYFWD_PIN, GPIO_OUT);
+    gpio_set_pulls(KEYFWD_PIN, false, false);
+    gpio_put(KEYFWD_PIN, 0); // > to OD
+
+    gpio_init(CYCLESTART_PIN);
+    gpio_set_dir(CYCLESTART_PIN, GPIO_OUT);
+    gpio_set_oeover(CYCLESTART_PIN, GPIO_OVERRIDE_LOW); // > to OD
+    gpio_put(CYCLESTART_PIN, 0);
+
+    gpio_init(FEEDHOLD_PIN);
+    gpio_set_dir(FEEDHOLD_PIN, GPIO_OUT);
+    gpio_set_oeover(FEEDHOLD_PIN, GPIO_OVERRIDE_LOW); // > to OD
+    gpio_put(FEEDHOLD_PIN, 0); // > to OD
  // Boot MSP430 keypad controller (the RP2040 does not support open drain outputs?)
     gpio_set_pulls(SWD_RESET, false, false);
     gpio_set_dir(SWD_RESET, GPIO_IN);
@@ -163,7 +200,42 @@ void hal_init (void)
  // Add any additional key mappings to keypad controller
     for(offset = 0; offset < sizeof(kmap) / sizeof(keypad_key_t); offset++)
         i2c_nb_send_n(KEYPAD_I2CADDR, (uint8_t *)&kmap[offset], sizeof(keypad_key_t));
-  }
+
+#endif
+}
+
+void isr_systick (void)
+{
+    systicks++;
+
+    if(ms_delay)
+        ms_delay--;
+
+    if(systickCallback)
+        systickCallback();
+}
+
+void delayms_attach (systick_callbak_ptr callback)
+{
+    systickCallback = callback;
+}
+
+uint32_t lcd_systicks (void)
+{
+    return systicks;
+}
+
+/*
+ * long delay
+ */
+void lcd_delayms (uint16_t ms)
+{
+    ms_delay = ms;
+
+    while(ms_delay);
+}
+
+#if UILIB_KEYPAD_ENABLE
 
 bool keypad_isKeydown (void)
 {
@@ -226,12 +298,36 @@ void signal_setMPGMode (bool on)
 
 bool signal_getMPGMode (void)
 {
-#ifdef UART_MODE
+#if UART_MODE
     return false;
 #else
     return !gpio_get(MPG_MODE_PIN);
 #endif
 }
+
+static void keyclick_int_handler (uint gpio, uint32_t events)
+{
+    if(events & (GPIO_IRQ_EDGE_FALL|GPIO_IRQ_EDGE_RISE)) {
+        if(gpio_get(KEYINTR_PIN) == 0) {
+            keyDown = true;
+            i2c_getSWKeycode(keypad_enqueue_keycode);
+        } else {
+            if(keypad_release()) {
+                keypad_setFwd(false);
+                if(!keypad_forward_queue_is_empty()) {
+                    sleep_us(50);
+                    keypad_setFwd(true);
+                }
+            } else if(interface.on_keyclick2)
+                interface.on_keyclick2(false, 0); // fire key up event
+            keyDown = false;
+        }
+    }
+}
+
+#endif
+
+#if UILIB_NAVIGATOR_ENABLE
 
 static uint32_t qei_xPos = 0, ymax = 0;
 
@@ -300,45 +396,6 @@ void mpg_reset (void)
 void mpg_setCallback (on_mpgChanged_ptr fn)
 {
     interface.on_mpgChanged = fn;
-}
-
-//For now...
-static void gpio_int_handler (uint gpio, uint32_t events)
-{
-    switch(gpio) {
-
-        case KEYINTR_PIN:
-            keyclick_int_handler(gpio, events);
-            break;
-
-        case NAVIGATOR_SW_PIN:
-            nav_sw_int_handler(gpio, events);
-            break;
-
-        default:
-            break;
-    }
-
-}
-
-static void keyclick_int_handler (uint gpio, uint32_t events)
-{
-    if(events & (GPIO_IRQ_EDGE_FALL|GPIO_IRQ_EDGE_RISE)) {
-        if(gpio_get(KEYINTR_PIN) == 0) {
-            keyDown = true;
-            i2c_getSWKeycode(keypad_enqueue_keycode);
-        } else {
-            if(keypad_release()) {
-                keypad_setFwd(false);
-                if(!keypad_forward_queue_is_empty()) {
-                    sleep_us(50);
-                    keypad_setFwd(true);
-                }
-            } else if(interface.on_keyclick2)
-                interface.on_keyclick2(false, 0); // fire key up event
-            keyDown = false;
-        }
-    }
 }
 
 static int64_t debounce_callback (alarm_id_t id, void *state)
@@ -445,3 +502,28 @@ static void mpg_int_handler (void)
         }
     }
 }
+
+#endif
+
+#if UILIB_KEYPAD_ENABLE || UILIB_NAVIGATOR_ENABLE
+//For now...
+static void gpio_int_handler (uint gpio, uint32_t events)
+{
+    switch(gpio) {
+#if UILIB_KEYPAD_ENABLE
+        case KEYINTR_PIN:
+            keyclick_int_handler(gpio, events);
+            break;
+#endif
+#if UILIB_NAVIGATOR_ENABLE
+        case NAVIGATOR_SW_PIN:
+            nav_sw_int_handler(gpio, events);
+            break;
+#endif
+        default:
+            break;
+    }
+
+}
+
+#endif

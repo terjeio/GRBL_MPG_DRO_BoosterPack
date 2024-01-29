@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.23 / 2022-01-28 / (c) Io Engineering / Terje
+ * v0.0.4 / 2023-02-26 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2021-2022, Terje Io
+Copyright (c) 2021-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
