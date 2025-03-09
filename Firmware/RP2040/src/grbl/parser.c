@@ -2,12 +2,12 @@
  * parser.c - collects, parses and dispatches lines of data from
  *            grbls serial output stream and/or i2c display protocol
  *
- * v0.0.6 / 2023-08-11 / (c) Io Engineering / Terje
+ * v0.0.7 / 2025-02-27 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2023, Terje Io
+Copyright (c) 2018-2025, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -311,26 +311,35 @@ static void parseOffsets (char *data)
     grbl_data.changed.await_wco_ok = grbl_data.awaitWCO;
 }
 
-
 static void parseOverrides (char *data)
 {
     char *next;
+    uint32_t value;
 
     next = strchr(data, ',');
     *next++ = '\0';
 
-    if(parseUint(&grbl_data.override.feed_rate, data))
+    value = grbl_data.override.feed_rate;
+    if(parseUint(&value, data)) {
         grbl_data.changed.feed_override = true;
+        grbl_data.override.feed_rate = (override_t)value;
+    }
 
     data = next;
     next = strchr(data, ',');
     *next++ = '\0';
 
-    if(parseUint(&grbl_data.override.rapid_rate, data))
+    value = grbl_data.override.rapid_rate;
+    if(parseUint(&value, data)) {
         grbl_data.changed.rapid_override = true;
+        grbl_data.override.rapid_rate = (override_t)value;
+    }
 
-    if(parseUint(&grbl_data.override.spindle_rpm, next))
+    value = grbl_data.override.spindle_rpm;
+    if(parseUint(&value, data)) {
         grbl_data.changed.rpm_override = true;
+        grbl_data.override.spindle_rpm = (override_t)value;
+    }
 }
 
 static void parseFeedSpeed (char *data)

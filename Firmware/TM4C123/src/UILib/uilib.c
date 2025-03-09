@@ -1,11 +1,11 @@
 /*
  * uilib.c - User Interface Library
  *
- * v1.0.8 / 2022-01-29 / (c) Io Engineering / Terje
+ * v1.0.8 / 2023-02-01 / (c) Io Engineering / Terje
  *
  */
 
- /* Copyright (c) 2015-2022, Io Engineering
+ /* Copyright (c) 2015-2023, Io Engineering
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -70,7 +70,7 @@ typedef struct event_element_t {
     struct event_element_t *next;
     raw_event_t event;
     keypress_t keypress;
-#ifdef _REMOTE_
+#if UILIB_REMOTE_ENABLE
     remote_cmd_t remote;
 #endif
 } event_element_t;
@@ -574,10 +574,12 @@ static Widget *widgetGetFirst (Widget *parent, uint8_t type, bool all)
     return widgetGetNext(parent, type, all);
 }
 
+/*
 static Widget *widgetGetLast (Widget *parent, uint8_t type, bool all)
 {
     return widgetGetPrev(parent, type, all);
 }
+*/
 
 static void positionNavigator (Widget *widget, bool callback)
 {
@@ -682,7 +684,7 @@ void UILibCanvasDisplay (Canvas *canvas)
         if(current.canvas && current.canvas != canvas && !UILibPublishEvent((Widget *)current.canvas, EventWidgetClose, (position_t){current.x, current.y}, false, NULL))
             return;
 
-#ifdef _TOUCH_
+#if UILIB_TOUCH_ENABLE
         TOUCH_SetEventHandler(0);
 #endif
 
@@ -997,7 +999,7 @@ Button *UILibButtonCreate (Widget *parent, uint16_t x, uint16_t y, const char *l
     uint16_t width = getStringWidth(buttonFont, label) + 6;
 
     if(width > parent->width)
-        width > parent->width;
+        width = parent->width;
 
     if(parent && (button = (Button *)widgetCreate(parent, WidgetButton, sizeof(Button), x, y, width, buttonHeight, eventHandler))) {
 
@@ -1397,6 +1399,8 @@ bool UILib_ValidateKeypress (TextBox *textbox, char c)
 
 // event handler functions
 
+#if UILIB_KEYPAD_ENABLE
+
 static void keypressEventHandler (bool keyDown, char key)
 {
     if(key > 0) {
@@ -1407,6 +1411,8 @@ static void keypressEventHandler (bool keyDown, char key)
         }
     }
 }
+
+#endif
 
 static int32_t pointerEventHandler (uint32_t message, int32_t x, int32_t y)
 {
@@ -1435,7 +1441,7 @@ static int32_t pointerEventHandler (uint32_t message, int32_t x, int32_t y)
     return 1;
 }
 
-#ifdef _REMOTE_
+#if UILIB_REMOTE_ENABLE
 
 void remoteEventHandler (remote_cmd_t command)
 {
@@ -1472,17 +1478,17 @@ void UILibClaimInputDevice (void)
     pointerDown = false;
     spin_lock = false;
 
-#ifdef _TOUCH_
+#if UILIB_TOUCH_ENABLE
     TOUCH_SetEventHandler(pointerEventHandler);
 #endif
 
     NavigatorSetEventHandler(pointerEventHandler);
 
-#ifdef _KEYPAD_
+#if UILIB_KEYPAD_ENABLE
     setKeyclickCallback(keypressEventHandler, true);
 #endif
 
-#ifdef _REMOTE_
+#if UILIB_REMOTE_ENABLE
     RemoteSetEventHandler(remoteEventHandler);
 #endif
 }
@@ -1519,7 +1525,7 @@ void UILibProcessEvents (void)
                     UILibPublishEvent(widget, pointerDown ? EventPointerDown : EventPointerUp, event->event.pos, true, NULL);
                 break;
 
-#ifdef _REMOTE_
+#if UILIB_REMOTE_ENABLE
             case REMOTE_COMMAND:
                 claimed = !UILibPublishEvent(widget, EventRemote, event->event.pos, true, (void *)&event->remote);
                 if(!claimed && event->remote.command == Select && event->remote.toggled && (widget->type & (WidgetButton|WidgetListElement)))
@@ -1597,7 +1603,7 @@ void UILibProcessEvents (void)
                 }
                 break;
 
-#ifdef _TOUCH_
+#if UILIB_TOUCH_ENABLE
             case POINTER_SCAN:
                 TOUCH_GetPosition();
                 break;

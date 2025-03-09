@@ -115,7 +115,7 @@ void clearScreen (bool blackWhite)
     lcd_writePixel(bgColor, (uint32_t)driver.display.Width * (uint32_t)driver.display.Height);
 }
 
-inline static uint16_t getoffset (Font *font, unsigned char c)
+__attribute__((optimize(0))) inline static uint16_t getoffset (Font *font, uint8_t c)
 {
     uint16_t offset = 0;
 
@@ -171,7 +171,7 @@ uint8_t drawChar (Font *font, uint16_t x, uint16_t y, char c, bool opaque)
         uint64_t pixels;
         bool paintSpace;
 
-        bitOffset = getoffset(font, c) * font->height;
+        bitOffset = getoffset(font, (uint8_t)c) * font->height;
         dataIndex = bitOffset >> 3;
         preShift = bitOffset - (dataIndex << 3);
         fontColumn = width;

@@ -51,15 +51,15 @@
 #define font_23x16 (Font*)font_23x16_data
 extern const uint8_t font_23x16_data[];
 
-#ifdef _REMOTE_
+#if UILIB_REMOTE_ENABLE
 #include "rc5recv.h"
 #endif
 
-#ifdef _TOUCH_
+#if UILIB_TOUCH_ENABLE
 #include "LCD/Touch/touch.h"
 #endif
 
-#ifdef _KEYPAD_
+#if UILIB_KEYPAD_ENABLE
 #include "../keypad.h"
 #endif
 

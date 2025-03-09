@@ -3,12 +3,12 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v0.0.3 / 2022-01-07 / (c)Io Engineering / Terje
+ * v0.0.4 / 2023-03-04 / (c)Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2021, Terje Io
+Copyright (c) 2018-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -44,8 +44,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "../UILib/uilib.h"
 #include "../interface.h"
-#include "../grbl.h"
-#include "../grblcomm.h"
+#include "../grbl/grbl.h"
+#include "../grbl/parser.h"
 
 #include "grblutils.h"
 #include "sender.h"
@@ -114,19 +114,19 @@ static void sendGCode (bool ok, grbl_data_t *grbl_data)
             UILibLabelDisplay(lblPass, grbl_data->message);
 
         if(grbl_data->changed.xpos) {
-            sprintf(grbl_data->block, "% 9.3f", grbl_data->position[X_AXIS]);
+            sprintf(grbl_data->block, "% 9.3f", grbl_data->position.x);
             UILibLabelDisplay(lblXPos, grbl_data->block);
         }
 
         if(grbl_data->changed.zpos) {
-            sprintf(grbl_data->block, "% 9.3f", grbl_data->position[Z_AXIS]);
+            sprintf(grbl_data->block, "% 9.3f", grbl_data->position.z);
             UILibLabelDisplay(lblZPos, grbl_data->block);
         }
 
         if(grbl_data->changed.leds) {
             leds.mist = grbl_data->coolant.mist;
             leds.flood = grbl_data->coolant.flood;
-            leds.spindle = grbl_data->spindle.on;
+            leds.spindle = grbl_data->spindle.state.on;
             leds_setState(leds);
         }
 

@@ -1,3 +1,6 @@
+/*
+ *  interface.c - LCD driver API, weak implementation
+ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -24,3 +27,5 @@ __attribute__((weak)) uint8_t lcd_readData (void) { return 0; }
 __attribute__((weak)) void lcd_readDataEnd (void) {}
 __attribute__((weak)) bool lcd_touchIsPenDown (void) { return false; }
 __attribute__((weak)) uint16_t lcd_touchGetPosition (bool xpos, uint8_t samples) { return 0; }
+
+__attribute__((weak)) void delayms_attach (systick_callbak_ptr callback) {}

@@ -3,7 +3,7 @@
  *
  * part of MPG/DRO for grbl on a secondary processor
  *
- * v1.0.12 / 2023-01-06 / (c)Io Engineering / Terje
+ * v1.0.13 / 2023-03-09 / (c)Io Engineering / Terje
  */
 
 /*
@@ -45,14 +45,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdbool.h>
 #include <math.h>
 
-#include "../LCD/lcd.h"
+#include "../LCD/graphics.h"
 #include "../UILib/uilib.h"
 #include "../fonts.h"
 #include "../fonts/arial_48x55.h"
 #include "../config.h"
-#include "../grblcomm.h"
 #include "../keypad.h"
 #include "../interface.h"
+#include "../grbl/parser.h"
 
 #include "menu.h"
 
@@ -135,7 +135,7 @@ static event_counters_t event_interval = {
 static leds_t leds = {
     .value = 0
 };
-#ifdef UART_MODE
+#if UART_MODE
 static bool jogModePending = false;
 #endif
 
@@ -187,9 +187,9 @@ static void MPG_ResetPosition (bool await)
     axis[Y_AXIS].mpg_position = 0;
     axis[Z_AXIS].mpg_position = 0;
     if(!(grbl_data->awaitWCO = await)) {
-        axis[X_AXIS].mpg_base = grbl_data->position[X_AXIS];
-        axis[Y_AXIS].mpg_base = grbl_data->position[Y_AXIS];
-        axis[Z_AXIS].mpg_base = grbl_data->position[Z_AXIS];
+        axis[X_AXIS].mpg_base = grbl_data->position.x;
+        axis[Y_AXIS].mpg_base = grbl_data->position.y;
+        axis[Z_AXIS].mpg_base = grbl_data->position.z;
     }
 }
 
@@ -215,7 +215,7 @@ static bool MPG_Move (void)
             if(grbl_data->absDistance)
                 axis[Z_AXIS].mpg_base += delta_z;
             velocity = pos->z.velocity;
-            sprintf(append(buffer), "Z%.3f", grbl_data->absDistance ? axis[Z_AXIS].mpg_base - grbl_data->offset[Z_AXIS] : delta_z);
+            sprintf(append(buffer), "Z%.3f", grbl_data->absDistance ? axis[Z_AXIS].mpg_base - grbl_data->offset.z : delta_z);
         }
     }
 
@@ -230,7 +230,7 @@ static bool MPG_Move (void)
         if(delta_x != 0.0f) {
             if(grbl_data->absDistance)
                 axis[X_AXIS].mpg_base += delta_x;
-            sprintf(append(buffer), "X%.3f", grbl_data->absDistance ? axis[X_AXIS].mpg_base - grbl_data->offset[X_AXIS] : delta_x);
+            sprintf(append(buffer), "X%.3f", grbl_data->absDistance ? axis[X_AXIS].mpg_base - grbl_data->offset.x : delta_x);
         }
     }
 
@@ -244,7 +244,7 @@ static bool MPG_Move (void)
         if(delta_y != 0.0f) {
             if(grbl_data->absDistance)
                 axis[Y_AXIS].mpg_base += delta_y;
-            sprintf(append(buffer), "Y%.3f", grbl_data->absDistance ? axis[Y_AXIS].mpg_base - grbl_data->offset[Y_AXIS] : delta_y);
+            sprintf(append(buffer), "Y%.3f", grbl_data->absDistance ? axis[Y_AXIS].mpg_base - grbl_data->offset.y : delta_y);
         }
     }
 
@@ -257,13 +257,13 @@ static bool MPG_Move (void)
         setColor(Coral);
 
         if(delta_x != 0.0f)
-            drawString(POSFONT, POSCOL, axis[X_AXIS].row, ftoa(axis[X_AXIS].mpg_base - grbl_data->offset[X_AXIS], "% 9.3f"), true);
+            drawString(POSFONT, POSCOL, axis[X_AXIS].row, ftoa(axis[X_AXIS].mpg_base - grbl_data->offset.x, "% 9.3f"), true);
 
         if(delta_y != 0.0f)
-            drawString(POSFONT, POSCOL, axis[Y_AXIS].row, ftoa(axis[Y_AXIS].mpg_base - grbl_data->offset[Y_AXIS], "% 9.3f"), true);
+            drawString(POSFONT, POSCOL, axis[Y_AXIS].row, ftoa(axis[Y_AXIS].mpg_base - grbl_data->offset.y, "% 9.3f"), true);
 
         if(delta_z != 0.0f)
-            drawString(POSFONT, POSCOL, axis[Z_AXIS].row, ftoa(axis[Z_AXIS].mpg_base - grbl_data->offset[Z_AXIS], "% 9.3f"), true);
+            drawString(POSFONT, POSCOL, axis[Z_AXIS].row, ftoa(axis[Z_AXIS].mpg_base - grbl_data->offset.z, "% 9.3f"), true);
 
         setColor(White);
 
@@ -286,7 +286,7 @@ static void displayPosition (uint_fast8_t i)
 {
     if(axis[i].visible) {
         setColor(axis[i].dro_lock ? Yellow : White);
-        drawString(POSFONT, POSCOL, axis[i].row, ftoa(grbl_data->position[i] - grbl_data->offset[i], "% 9.3f"), true);
+        drawString(POSFONT, POSCOL, axis[i].row, ftoa(grbl_data->position.values[i] - grbl_data->offset.values[i], "% 9.3f"), true);
         setColor(White);
     }
 }
@@ -401,13 +401,13 @@ static void processKeypress (void)
         case 'S':                                   // Spindle
             if(grbl_data->mpgMode)
                 if(grbl_data->grbl.state == Idle) {
-                    bool spindle_on = !grbl_data->spindle.on;
+                    bool spindle_on = !grbl_data->spindle.state.on;
                     if(spindle_on) {
-                        grbl_data->spindle.ccw = signal_getSpindleDir();
+                        grbl_data->spindle.state.ccw = signal_getSpindleDir();
                         if(mpg_rpm == 0)
                             mpg_rpm = 400.0f;
                     }
-                    strcpy(command, spindle_on ? (grbl_data->spindle.ccw ? "M4" : "M3") : "M5");
+                    strcpy(command, spindle_on ? (grbl_data->spindle.state.ccw ? "M4" : "M3") : "M5");
                     if(spindle_on)
                         sprintf(append(command), "S%d", (int32_t)mpg_rpm);
                     serial_writeLn((char *)command);
@@ -663,7 +663,7 @@ void jogModeChanged (jogmode_t mode)
 {
     jogMode = mode;
     event |= EVENT_JOGMODECHANGED;
-#ifdef UART_MODE
+#if UART_MODE
     jogModePending = grbl_data->mpgMode;
 #endif
 }
@@ -674,7 +674,7 @@ static void on_settings_received (settings_t *setn)
 
     if(settings->is_loaded) {
 
-        if((settings->mode == 2)) {
+        if((isLathe = settings->mode == 2)) {
             axis[Y_AXIS].visible = false;
             axis[Z_AXIS].row = YROW;
             axis[Z_AXIS].visible = true;
@@ -795,7 +795,7 @@ static void displayGrblData (char *line)
                     }
                     setMPGFactorBG(c, Black);
                 } while(c);                
-#ifdef UART_MODE
+#if UART_MODE
                 if(jogModePending) {
                     jogModePending = false;
                     serial_putC('0' + (char)jogMode);
@@ -814,10 +814,10 @@ static void displayGrblData (char *line)
         }
 
         if(grbl_data->changed.rpm) {
-            bool display_actual = grbl_data->spindle.on && grbl_data->spindle.rpm_actual > 0.0f;
+            bool display_actual = grbl_data->spindle.state.on && grbl_data->spindle.rpm_actual > 0.0f;
             if(grbl_data->spindle.rpm_programmed > 0.0f)
                 mpg_rpm = grbl_data->spindle.rpm_programmed;
-            if(display_actual || leds.spindle != grbl_data->spindle.on) {
+            if(display_actual || leds.spindle != grbl_data->spindle.state.on) {
                 sprintf(line, "%6.1f", display_actual ? grbl_data->spindle.rpm_actual : mpg_rpm);
                 lblRPM->widget.fgColor = display_actual ? (grbl_data->spindle.rpm_actual > 2000.0f ? Coral : White) : Coral;
                 UILibLabelDisplay(lblRPM, line);
@@ -827,7 +827,7 @@ static void displayGrblData (char *line)
         if(grbl_data->changed.leds) {
             leds.mist = grbl_data->coolant.mist;
             leds.flood = grbl_data->coolant.flood;
-            leds.spindle = grbl_data->spindle.on;
+            leds.spindle = grbl_data->spindle.state.on;
             leds_setState(leds);
         }
 
@@ -958,7 +958,7 @@ static void canvasHandler (Widget *self, Event *uievent)
                     else if (rpm > settings->spindle.rpm_max)
                         rpm = settings->spindle.rpm_max;
                     mpg_rpm = rpm;
-                    if(grbl_data->spindle.on) {
+                    if(grbl_data->spindle.state.on) {
                         sprintf(command, "S%d", (int32_t)mpg_rpm);
                         serial_writeLn((char *)command);
                     }
@@ -968,8 +968,8 @@ static void canvasHandler (Widget *self, Event *uievent)
                 } else if(isReady) {
                     int32_t override = (int32_t)(uievent->y - nav_midpos);
                     if(override > 0) {
-                        if(grbl_data->spindle.rpm_override + override > MAX_SPINDLE_RPM_OVERRIDE)
-                            override = MAX_SPINDLE_RPM_OVERRIDE - grbl_data->spindle.rpm_override;
+                        if(grbl_data->override.spindle_rpm + override > MAX_SPINDLE_RPM_OVERRIDE)
+                            override = MAX_SPINDLE_RPM_OVERRIDE - grbl_data->override.spindle_rpm;
                         while(override > SPINDLE_OVERRIDE_COARSE_INCREMENT) {
                             keypad_forward_keypress(CMD_OVERRIDE_SPINDLE_COARSE_PLUS);
                             override -= SPINDLE_OVERRIDE_COARSE_INCREMENT;
@@ -1003,12 +1003,13 @@ static void canvasHandler (Widget *self, Event *uievent)
             grbl_data = setGrblReceiveCallback(displayGrblData);
             for(i = 0; i < 3; i++) {
                 if(axis[i].visible) {
-                    axis[i].lblAxis->widget.fgColor = i == mpg_axis ? Green : White;
-                    UILibLabelDisplay(axis[i].lblAxis, axis[i].label);
 #ifdef LATHEMODE
                     if(i == X_AXIS)
                         displayXMode("?");
+#else
+                    axis[i].lblAxis->widget.fgColor = i == mpg_axis ? Green : White;
 #endif
+                    UILibLabelDisplay(axis[i].lblAxis, axis[i].label);
                 }
             }
             drawString(font_freepixel_17x34, 5, RPMROW, "RPM:", false);
@@ -1059,6 +1060,7 @@ void DROInitCanvas (void)
     memset(&axis, 0, sizeof(axis));
 
 #ifdef LATHEMODE
+    isLathe = true;
     axis[X_AXIS].row = XROW;
     axis[X_AXIS].visible = true;
     axis[Y_AXIS].row = YROW;

@@ -956,21 +956,21 @@ void WriteFLASH(word StartAddr, word Length, word *DataArray)
 //! STATUS_ERROR otherwise)
 word WriteFLASHallSections(const unsigned short *data, const unsigned long *address, const unsigned long *length_of_sections, const unsigned long sections)
 {
-    int i, init = 1;
+    unsigned int i;
     word *p = (word *)data;
 
     for(i = 0; i < sections; i++)
-    {
-        // Write/Verify(PSA) one FLASH section
-        WriteFLASH(address[i], length_of_sections[i], p);
-        if (!VerifyMem(address[i], length_of_sections[i], p))
-        {
-           return(STATUS_ERROR);
-        }
         p += length_of_sections[i];      
-    }
+
+    i = sections;
+    do { // Write/Verify(PSA) one FLASH section
+        p -= length_of_sections[--i];      
+        WriteFLASH(address[i], length_of_sections[i], p);
+        if(!VerifyMem(address[i], length_of_sections[i], p))
+           return STATUS_ERROR;
+    } while(i);
     
-    return(STATUS_OK);
+    return STATUS_OK;
 }
 
 //----------------------------------------------------------------------------
@@ -1138,7 +1138,7 @@ void EraseFLASH(word EraseMode, word EraseAddr)
 #else
     word StrobeAmount = 4820;       // default for Segment Erase
 #endif
-	word i, loopcount = 1;          // erase cycle repeating for Mass Erase
+    word i, loopcount = 1;          // erase cycle repeating for Mass Erase
     word FCTL3_val = SegmentInfoAKey;   // SegmentInfoAKey holds Lock-Key for Info
                                         // Seg. A     
 
@@ -1230,7 +1230,7 @@ word EraseCheck(word StartAddr, word Length)
         }
     }
     return STATUS_OK; 
-    return (VerifyPSA(StartAddr, Length, 0));
+//    return (VerifyPSA(StartAddr, Length, 0));
 }
 
 //----------------------------------------------------------------------------

@@ -1,12 +1,12 @@
 /*
  * main.c - MPG/DRO for grbl on a secondary processor
  *
- * v0.0.3 / 2022-01-03 / (c) Io Engineering / Terje
+ * v0.0.4 / 2023-03-07 / (c) Io Engineering / Terje
  */
 
 /*
 
-Copyright (c) 2018-2022, Terje Io
+Copyright (c) 2018-2023, Terje Io
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -43,25 +43,30 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdbool.h>
 #include <math.h>
 
-#include "grblcomm.h"
-#include "LCD/lcd.h"
+#include "LCD/graphics.h"
 #include "UILib/uilib.h"
 #include "canvas/boot.h"
 #include "canvas/dro.h"
+#include "grbl/parser.h"
+#include "interface.h"
+
+extern bool flashKeypadController (void);
 
 void main (void)
 {
     lcd_display_t *screen;
 
-    initGraphics();
-
     hal_init();
+
+    initGraphics();
 
     setOrientation(Orientation_Horizontal);
     UILibInit();
     UILibSetTabnav(6);
 
 //    TOUCH_Calibrate();
+
+    flashKeypadController();
 
     clearScreen(true);
 
@@ -75,7 +80,12 @@ void main (void)
     DROShowCanvas(screen);
 
     while(true) {
+#ifdef PARSER_SERIAL_ENABLE
         grblPollSerial();
+#endif
+#ifdef PARSER_I2C_ENABLE
+        grblPollI2C();
+#endif
         DROProcessEvents();
         UILibProcessEvents();
     }

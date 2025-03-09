@@ -43,7 +43,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sdcard.h"
 #include "threading.h"
 #include "grblutils.h"
-#include "../grblcomm.h"
+#include "../grbl/parser.h"
 
 static bool modeMPG;
 static Canvas *canvasConfig = 0, *canvasPrevious;

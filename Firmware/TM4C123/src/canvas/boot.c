@@ -48,7 +48,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "boot.h"
 
-char const ioEngineering[] = "2018-2022 Io Engineering", version[] = "v0.05 - 2023-01-06";
+char const ioEngineering[] = "2018-2023 Io Engineering", version[] = "v0.06 - 2023-01-06";
 
 static Canvas *canvasBoot = NULL;
 

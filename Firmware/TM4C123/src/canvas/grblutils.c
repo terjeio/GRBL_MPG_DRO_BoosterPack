@@ -42,9 +42,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 
 #include "../fonts.h"
-#include "../grblcomm.h"
 #include "../interface.h"
 #include "../UILib/uilib.h"
+#include "../grbl/parser.h"
 
 static Canvas *canvasUtils = 0, *canvasPrevious;
 static Label *lblResponseL = NULL, *lblResponseR = NULL;

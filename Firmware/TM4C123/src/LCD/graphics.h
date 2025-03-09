@@ -24,6 +24,8 @@
 #include "colorRGB.h"
 #include "../fonts/font.h"
 
+#define delay(ms) lcd_delayms(ms)
+
 typedef enum {
     Orientation_Vertical,
     Orientation_Horizontal,
@@ -62,9 +64,10 @@ typedef union {
 
 typedef struct {
     lcd_display_t display;
-    void (*systickCallback)(void);
     void (*touchIRQHandler)(void);
 } lcd_driver_t;
+
+typedef void (*systick_callbak_ptr)(void);
 
 void initGraphics (void);
 lcd_display_t *getDisplayDescriptor (void);
@@ -72,7 +75,6 @@ void setOrientation (orientation_t orientation);
 void displayOn (bool on);
 void setColor (RGBColor_t color);
 void setBackgroundColor (RGBColor_t color);
-void delay (uint16_t ms);
 bool setSysTickCallback (void (*fn)(void));
 //
 void clearScreen (bool blackWhite);
@@ -121,5 +123,7 @@ extern void lcd_readDataEnd (void);
 extern void lcd_touchIRQHandler (void);
 extern bool lcd_touchIsPenDown (void);
 extern uint16_t lcd_touchGetPosition (bool xpos, uint8_t samples);
+
+extern void delayms_attach (systick_callbak_ptr callback);
 
 #endif // __GRAPHICS__H_

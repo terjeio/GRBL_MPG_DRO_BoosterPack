@@ -24,7 +24,15 @@
 
 #include "graphics.h"
 #include "colorRGB.h"
-#include "lcd.h"
+#include "config.h"
+
+#ifdef ILI9486
+#include "ili9486.h"
+#elif defined(ILI9340) || defined(ILI9341)
+#include "ili934x.h"
+#elif defined(ST7789)
+#include "st7789.h"
+#endif
 
 #ifdef TJPGD_BUFSIZE
 #include "TJpegDec/tjpgd.h"
@@ -36,14 +44,9 @@ static lcd_driver_t driver;
 
 /**/
 
-void delay (uint16_t ms)
+bool setSysTickCallback (systick_callbak_ptr callback)
 {
-    lcd_delayms(ms);
-}
-
-bool setSysTickCallback (void (*fn)(void))
-{
-    driver.systickCallback = fn;
+    delayms_attach(callback);
     lcd_delayms(1); // start systick timer
     return true; // for now
 }
@@ -112,7 +115,7 @@ void clearScreen (bool blackWhite)
     lcd_writePixel(bgColor, (uint32_t)driver.display.Width * (uint32_t)driver.display.Height);
 }
 
-inline static uint16_t getoffset (Font *font, unsigned char c)
+__attribute__((optimize(0))) inline static uint16_t getoffset (Font *font, uint8_t c)
 {
     uint16_t offset = 0;
 
@@ -168,7 +171,7 @@ uint8_t drawChar (Font *font, uint16_t x, uint16_t y, char c, bool opaque)
         uint64_t pixels;
         bool paintSpace;
 
-        bitOffset = getoffset(font, c) * font->height;
+        bitOffset = getoffset(font, (uint8_t)c) * font->height;
         dataIndex = bitOffset >> 3;
         preShift = bitOffset - (dataIndex << 3);
         fontColumn = width;
